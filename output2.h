@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------------
 
 #pragma once
-import <Windows.h>;
+#include <windef.h>
 // 出力情報構造体
 struct OUTPUT_INFO {
 	int flag;			//	フラグ

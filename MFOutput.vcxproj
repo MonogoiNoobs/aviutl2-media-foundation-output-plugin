@@ -199,7 +199,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="framework.h" />
     <ClInclude Include="output2.h" />
   </ItemGroup>
   <ItemGroup>
