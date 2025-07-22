@@ -43,32 +43,33 @@ uint32_t constexpr get_pcm_block_alignment(uint32_t&& audio_ch, uint32_t&& bit) 
 		D3D_FEATURE_LEVEL_9_2,
 		D3D_FEATURE_LEVEL_9_1
 	} };
-	THROW_IF_FAILED(D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, feature_levels.data(), static_cast<unsigned int>(feature_levels.size()), D3D11_SDK_VERSION, d3d11_device.put(), NULL, NULL));
+	THROW_IF_FAILED(D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, feature_levels.data(), static_cast<unsigned int>(feature_levels.size()), D3D11_SDK_VERSION, &d3d11_device, NULL, NULL));
 	auto dxgi_device_manager{ wil::com_ptr<IMFDXGIDeviceManager>{} };
 	unsigned int reset_token{};
-	THROW_IF_FAILED(MFCreateDXGIDeviceManager(&reset_token, dxgi_device_manager.put()));
+	THROW_IF_FAILED(MFCreateDXGIDeviceManager(&reset_token, &dxgi_device_manager));
 	THROW_IF_FAILED(dxgi_device_manager->ResetDevice(d3d11_device.get(), reset_token));
 
 	auto sink_writer_attributes{ wil::com_ptr<IMFAttributes>{} };
-	THROW_IF_FAILED(MFCreateAttributes(sink_writer_attributes.put(), 4));
+	THROW_IF_FAILED(MFCreateAttributes(&sink_writer_attributes, 4));
 	THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true));
 	THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, true));
 	THROW_IF_FAILED(sink_writer_attributes->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4));
 	THROW_IF_FAILED(sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, dxgi_device_manager.get()));
 
 	auto sink_writer{ wil::com_ptr<IMFSinkWriter>{} };
-	THROW_IF_FAILED(MFCreateSinkWriterFromURL(output_name.data(), nullptr, sink_writer_attributes.get(), sink_writer.put()));
+	THROW_IF_FAILED(MFCreateSinkWriterFromURL(output_name.data(), nullptr, sink_writer_attributes.get(), &sink_writer));
 	MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Set Sink Writer.");
-	return std::move(sink_writer);
+
+	return sink_writer;
 }
 
-[[nodiscard]] auto configure_video_stream(OUTPUT_INFO const* const& oip, IMFSinkWriter* sink_writer)
+[[nodiscard]] auto configure_video_stream(OUTPUT_INFO const* const& oip, IMFSinkWriter* const& sink_writer)
 {
 	MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Configuring video stream for Sink Writer...");
 
 	auto output_video_media_type{ wil::com_ptr<IMFMediaType>{} };
-	THROW_IF_FAILED(MFCreateMediaType(output_video_media_type.put()));
-	unsigned long video_index{};
+	THROW_IF_FAILED(MFCreateMediaType(&output_video_media_type));
+	DWORD video_index{};
 
 	THROW_IF_FAILED(output_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
 	THROW_IF_FAILED(output_video_media_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264));
@@ -83,13 +84,13 @@ uint32_t constexpr get_pcm_block_alignment(uint32_t&& audio_ch, uint32_t&& bit) 
 	return video_index;
 }
 
-[[nodiscard]] auto configure_audio_stream(OUTPUT_INFO const* const& oip, IMFSinkWriter* sink_writer)
+[[nodiscard]] auto configure_audio_stream(OUTPUT_INFO const* const& oip, IMFSinkWriter* const& sink_writer)
 {
 	MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Configuring audio stream for Sink Writer...");
 
 	auto output_audio_media_type{ wil::com_ptr<IMFMediaType>{} };
-	THROW_IF_FAILED(MFCreateMediaType(output_audio_media_type.put()));
-	unsigned long audio_index{};
+	THROW_IF_FAILED(MFCreateMediaType(&output_audio_media_type));
+	DWORD audio_index{};
 	THROW_IF_FAILED(output_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
 	THROW_IF_FAILED(output_audio_media_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_AAC));
 	THROW_IF_FAILED(output_audio_media_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, oip->audio_ch));
@@ -101,7 +102,7 @@ uint32_t constexpr get_pcm_block_alignment(uint32_t&& audio_ch, uint32_t&& bit) 
 	return audio_index;
 }
 
-auto configure_video_input(OUTPUT_INFO const* const& oip, IMFSinkWriter* sink_writer, unsigned long const& video_index)
+auto configure_video_input(OUTPUT_INFO const* const& oip, IMFSinkWriter* const& sink_writer, DWORD const& video_index)
 {
 	MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Configuring video input for Sink Writer...");
 
@@ -113,7 +114,7 @@ auto configure_video_input(OUTPUT_INFO const* const& oip, IMFSinkWriter* sink_wr
 
 	//MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Default stride is {}.", default_stride);
 	auto input_video_media_type{ wil::com_ptr<IMFMediaType>{} };
-	THROW_IF_FAILED(MFCreateMediaType(input_video_media_type.put()));
+	THROW_IF_FAILED(MFCreateMediaType(&input_video_media_type));
 	THROW_IF_FAILED(input_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
 	THROW_IF_FAILED(input_video_media_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2));
 	THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
@@ -127,14 +128,14 @@ auto configure_video_input(OUTPUT_INFO const* const& oip, IMFSinkWriter* sink_wr
 	MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Set input video media type with {} image size.", image_size);
 }
 
-auto configure_audio_input(OUTPUT_INFO const* const& oip, IMFSinkWriter* sink_writer, unsigned long const& audio_index)
+auto configure_audio_input(OUTPUT_INFO const* const& oip, IMFSinkWriter* const& sink_writer, DWORD const& audio_index)
 {
 	MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Configuring audio input for Sink Writer...");
 
 	auto input_audio_media_type{ wil::com_ptr<IMFMediaType>{} };
 
 	MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Creating input audio media type...");
-	THROW_IF_FAILED(MFCreateMediaType(input_audio_media_type.put()));
+	THROW_IF_FAILED(MFCreateMediaType(&input_audio_media_type));
 
 	THROW_IF_FAILED(input_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
 	THROW_IF_FAILED(input_audio_media_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM));
@@ -165,9 +166,9 @@ auto initialize_sink_writer(OUTPUT_INFO const* const& oip)
 	return std::make_pair(std::move(sink_writer), std::make_pair(video_index, audio_index));
 }
 
-auto write_video_frame_to_sink_writer(OUTPUT_INFO const* const& oip, IMFSinkWriter* sink_writer, int const& f, unsigned long& index, long long const& time_stamp)
+auto write_video_frame_to_sink_writer(OUTPUT_INFO const* const& oip, IMFSinkWriter* const& sink_writer, int const& f, DWORD& index, long long const& time_stamp)
 {
-	auto const frame_dib_pixel_ptr{ oip->func_get_video(f, FCC('YUY2')) };
+	auto frame_dib_pixel_ptr{ static_cast<BYTE*>(oip->func_get_video(f, FCC('YUY2'))) };
 
 	long default_stride{};
 	THROW_IF_FAILED(MFGetStrideForBitmapInfoHeader(MFVideoFormat_YUY2.Data1, oip->w, &default_stride));
@@ -181,16 +182,24 @@ auto write_video_frame_to_sink_writer(OUTPUT_INFO const* const& oip, IMFSinkWrit
 	long stride{};
 	BYTE* video_2d_buffer_front{};
 	DWORD video_2d_buffer_max_size{};
+	DWORD contiguous_length{};
 
 	auto video_buffer{ wil::com_ptr<IMFMediaBuffer>{} };
-	THROW_IF_FAILED(MFCreate2DMediaBuffer(oip->w, oip->h, MFVideoFormat_YUY2.Data1, false, video_buffer.put()));
+	THROW_IF_FAILED(MFCreate2DMediaBuffer(oip->w, oip->h, MFVideoFormat_YUY2.Data1, false, &video_buffer));
 	THROW_IF_FAILED(video_buffer.query<IMF2DBuffer2>()->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &video_2d_buffer_front, &video_2d_buffer_max_size));
 	if (f == 0) MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] IMF2DBuffer opened: {} given stride. Max size: {}", stride, video_2d_buffer_max_size);
 	THROW_IF_FAILED(MFCopyImage(scanline, stride, static_cast<BYTE*>(frame_dib_pixel_ptr), default_stride, default_stride, oip->h));
 	THROW_IF_FAILED(video_buffer.query<IMF2DBuffer2>()->Unlock2D());
 
+	// “Generally, you should avoid mixing calls to IMF2DBuffer and IMFMediaBuffer methods on the same media buffer.”
+	//     —Microsoft, in https://learn.microsoft.com/en-us/windows/win32/api/mfobjects/nn-mfobjects-imf2dbuffer
+	// 
+	// https://stackoverflow.com/questions/47930340/
+	THROW_IF_FAILED(video_buffer.query<IMF2DBuffer2>()->GetContiguousLength(&contiguous_length));
+	THROW_IF_FAILED(video_buffer->SetCurrentLength(contiguous_length));
+
 	auto video_sample{ wil::com_ptr<IMFSample>{} };
-	THROW_IF_FAILED(MFCreateSample(video_sample.put()));
+	THROW_IF_FAILED(MFCreateSample(&video_sample));
 	if (f == 0) MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Created a sample.");
 	THROW_IF_FAILED(video_sample->AddBuffer(video_buffer.get()));
 	if (f == 0) MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Added a buffer to the sample.");
@@ -200,7 +209,7 @@ auto write_video_frame_to_sink_writer(OUTPUT_INFO const* const& oip, IMFSinkWrit
 	if (f == 0) MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Sample duration: {}", time_stamp);
 
 	if (f == 0) MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Trying to write the sample at index {}...", index);
-	THROW_IF_FAILED(sink_writer->WriteSample(index, video_sample.get())); //! ここでMF_E_INVALIDREQUESTを吐いて死にます。
+	THROW_IF_FAILED(sink_writer->WriteSample(index, video_sample.get()));
 	if (f == 0) MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Wrote a sample ({}) at {}.", time_stamp, time_stamp * f);
 }
 
@@ -250,11 +259,13 @@ auto func_output(OUTPUT_INFO* oip)
 		auto audio_data{ oip->func_get_audio(audio_start_position, audio_length, &readed_audio_samples, WAVE_FORMAT_PCM) };
 		if (!readed_audio_samples) continue;
 
+		auto audio_sample{ wil::com_ptr<IMFSample>{} };
+		MFCreateSample(&audio_sample);
 		for (auto ch{ 0 }; ch < oip->audio_ch; ++ch)
 		{
 			auto audio_buffer{ wil::com_ptr<IMFMediaBuffer>{} };
-			MFCreateMemoryBuffer(get_pcm_block_alignment(1, 16), audio_buffer.put());
-			byte* media_data{};
+			MFCreateMemoryBuffer(get_pcm_block_alignment(1, 16), &audio_buffer);
+			BYTE* media_data{};
 			DWORD media_data_max_length{};
 
 			audio_buffer->Lock(&media_data, &media_data_max_length, nullptr);
@@ -262,15 +273,15 @@ auto func_output(OUTPUT_INFO* oip)
 			audio_buffer->Unlock();
 
 			audio_buffer->SetCurrentLength(get_pcm_block_alignment(1, 16));
-			auto audio_sample{ wil::com_ptr<IMFSample>{} };
+			
 			audio_sample->AddBuffer(audio_buffer.get());
-			MFCreateSample(audio_sample.put());
-			audio_sample->SetSampleTime(time_stamp * f);
-			audio_sample->SetSampleDuration(time_stamp);
-			sink_writer->WriteSample(audio_index, audio_sample.get());
+
+			
+			
 		}
-
-
+		audio_sample->SetSampleTime(time_stamp * f);
+		audio_sample->SetSampleDuration(time_stamp);
+		sink_writer->WriteSample(audio_index, audio_sample.get());
 	}
 	sink_writer->Finalize();
 
@@ -281,22 +292,22 @@ auto func_output(OUTPUT_INFO* oip)
 	return true;
 }
 
-bool func_config(HWND, HINSTANCE)
+auto func_config(HWND, HINSTANCE)
 {
 	// ここに出力設定のダイアログを実装します
 	return true; // 成功ならtrueを返す
 }
 
-wchar_t const* func_get_config_text()
+auto func_get_config_text()
 {
 	// ここに出力設定のテキスト情報を実装します
 	return L"MonogoiNoobs's MediaFoundation File Saver preferences"; // 設定情報のテキストを返す
 }
 
-auto output_plugin_table{ OUTPUT_PLUGIN_TABLE{
+auto constexpr output_plugin_table{ OUTPUT_PLUGIN_TABLE{
 	OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
 	L"MediaFoundation File Saver",					// プラグインの名前
-	L"MPEG-4 (*.mp4)\0*.mp4\0",					// 出力ファイルのフィルタ
+	L"MPEG-4 AVC/H.264 + AAC-LC (*.mp4)\0*.mp4\0",					// 出力ファイルのフィルタ
 	L"MonogoiNoobs's MediaFoundation File Saver v0.1.0",	// プラグインの情報
 	func_output,									// 出力時に呼ばれる関数へのポインタ
 	func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
