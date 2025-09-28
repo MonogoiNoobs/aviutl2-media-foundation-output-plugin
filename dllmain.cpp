@@ -2,14 +2,12 @@
 #define NOMINMAX
 #include <Windows.h>
 #include <mfapi.h>
-#include <mfidl.h>
+#include <mfidl.h> // mfreadwrite.h より先にインクルードしておかないとビルド不可能。死ね。
 #include <mfreadwrite.h>
 #include <wil/com.h>
 #include "output2.h"
 //#include <D3D11.h>
 import std;
-#include <io.h>
-#include <Fcntl.h>
 #include <codecapi.h>
 
 #pragma comment(lib, "Mfplat")
@@ -17,12 +15,6 @@ import std;
 #pragma comment(lib, "Mfuuid")
 //#pragma comment(lib, "d3d11")
 #pragma comment(lib, "User32")
-
-#ifdef NDEBUG
-#define MN_MFOUTPUT_PRINT_DEBUG_CONSOLE(format, ...) do { } while (0)
-#else
-#define MN_MFOUTPUT_PRINT_DEBUG_CONSOLE(format, ...) std::println(format __VA_OPT__(,) __VA_ARGS__)
-#endif // NDEBUG
 
 uint32_t constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noexcept
 {
@@ -52,9 +44,8 @@ uint32_t constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) 
 	auto sink_writer_attributes{ wil::com_ptr<IMFAttributes>{} };
 	THROW_IF_FAILED(MFCreateAttributes(&sink_writer_attributes, 4));
 	//THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true));
-	THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, true));
-	THROW_IF_FAILED(sink_writer_attributes->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4));
 	//THROW_IF_FAILED(sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, dxgi_device_manager.get()));
+	THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, true));
 
 	auto sink_writer{ wil::com_ptr<IMFSinkWriter>{} };
 	THROW_IF_FAILED(MFCreateSinkWriterFromURL(output_name, nullptr, sink_writer_attributes.get(), &sink_writer));
@@ -118,7 +109,20 @@ auto configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &
 	THROW_IF_FAILED(MFSetAttributeSize(input_video_media_type.get(), MF_MT_FRAME_SIZE, oip->w, oip->h));
 	THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_FRAME_RATE, oip->rate, oip->scale));
 	THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
-	THROW_IF_FAILED(sink_writer->SetInputMediaType(video_index, input_video_media_type.get(), nullptr));
+
+	auto video_encoder_attributes{ wil::com_ptr<IMFAttributes>{} };
+	THROW_IF_FAILED(MFCreateAttributes(&video_encoder_attributes, 4));
+
+	// CODECAPI_AVEncH264CABACEnable の値は VT_BOOL とMSDNには書いてある。
+	// しかし、実際には UINT32 で true/false を指定する必要がある。
+	// マジで死ね。
+	THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncH264CABACEnable, true));
+
+	THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 2));
+	THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_Quality));
+	THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncCommonQuality, 70));
+
+	THROW_IF_FAILED(sink_writer->SetInputMediaType(video_index, input_video_media_type.get(), video_encoder_attributes.get()));
 }
 
 auto configure_audio_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, DWORD const &audio_index)
@@ -145,7 +149,7 @@ auto initialize_sink_writer(OUTPUT_INFO const *const &oip)
 
 	THROW_IF_FAILED(sink_writer->BeginWriting());
 
-	return std::make_pair(std::move(sink_writer), std::make_pair(video_index, audio_index));
+	return std::make_pair(sink_writer, std::make_pair(video_index, audio_index));
 }
 
 auto write_video_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int const &f, DWORD const &index, long long const &time_stamp, long const &default_stride)
@@ -194,8 +198,8 @@ auto write_audio_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sin
 	oip->func_rest_time_disp(n, oip->audio_n);
 
 	// bytes per audio-frame (block align)
-	auto block_align = get_pcm_block_alignment(static_cast<uint32_t>(oip->audio_ch), 16); // bytes per audio-frame
-	auto max_sample_size = static_cast<int>(block_align * oip->audio_rate); // bytes per second
+	auto const block_align{ get_pcm_block_alignment(static_cast<uint32_t>(oip->audio_ch), 16) }; // bytes per audio-frame
+	auto const max_sample_size{ static_cast<int>(block_align * oip->audio_rate) }; // bytes per second
 
 	int read_audio_sample_size{};
 	auto audio_data{ oip->func_get_audio(n, max_sample_size, &read_audio_sample_size, WAVE_FORMAT_PCM) };
@@ -203,9 +207,9 @@ auto write_audio_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sin
 	if (!read_audio_sample_size) return true;
 
 	// compute number of audio-frames (samples per channel) in buffer
-	auto const frames = static_cast<int64_t>(read_audio_sample_size) / static_cast<int64_t>(block_align);
-	auto const sample_duration = static_cast<int64_t>(frames) * 10'000'000LL / oip->audio_rate; // 100-ns units
-	auto const sample_time = static_cast<int64_t>(n) * 10'000'000LL / oip->audio_rate; // 100-ns units for start
+	auto const frames{ static_cast<int64_t>(read_audio_sample_size) / static_cast<int64_t>(block_align) };
+	auto const sample_duration{ static_cast<int64_t>(frames) * 10'000'000LL / oip->audio_rate }; // 100-ns units
+	auto const sample_time{ static_cast<int64_t>(n) * 10'000'000LL / oip->audio_rate }; // 100-ns units for start
 
 	auto audio_buffer{ wil::com_ptr<IMFMediaBuffer>{} };
 	THROW_IF_FAILED(MFCreateMemoryBuffer(static_cast<DWORD>(read_audio_sample_size), &audio_buffer));
@@ -235,15 +239,8 @@ using unique_mfshutdown_call = wil::unique_call<decltype(&::MFShutdown), ::MFShu
 
 auto func_output(OUTPUT_INFO *oip)
 {
-#ifndef NDEBUG
-	AllocConsole();
-	auto console{ _open_osfhandle((intptr_t)GetStdHandle(STD_OUTPUT_HANDLE), _O_TEXT) };
-	auto console_file_handle{ _fdopen(console, "w") };
-	freopen_s(&console_file_handle, "CONOUT$", "w", stdout);
-#endif // !NDEBUG
-
-	auto com_cleanup{ wil::CoInitializeEx() };
-	auto mf_cleanup{ MyMFStartup() };
+	auto const com_cleanup{ wil::CoInitializeEx() };
+	auto const mf_cleanup{ MyMFStartup() };
 
 	uint64_t time_stamp{};
 	THROW_IF_FAILED(MFFrameRateToAverageTimePerFrame(oip->rate, oip->scale, &time_stamp));
@@ -254,7 +251,6 @@ auto func_output(OUTPUT_INFO *oip)
 	auto const [sink_writer, stream_indices] { initialize_sink_writer(oip) };
 	auto const &[video_index, audio_index] { stream_indices };
 
-	MN_MFOUTPUT_PRINT_DEBUG_CONSOLE("[INFO] Starting writing...");
 	oip->func_set_buffer_size(32, 32);
 	for (auto f{ 0 }; f < oip->n; ++f)
 		if (!write_video_sample(oip, sink_writer.get(), f, video_index, time_stamp, default_stride)) goto abort;
@@ -264,10 +260,6 @@ auto func_output(OUTPUT_INFO *oip)
 abort:
 	sink_writer->Finalize();
 
-#ifndef NDEBUG
-	FreeConsole();
-	_close(console);
-#endif // !NDEBUG
 	return true;
 }
 
@@ -280,14 +272,14 @@ auto func_config(HWND, HINSTANCE)
 auto func_get_config_text()
 {
 	// ここに出力設定のテキスト情報を実装します
-	return L"MonogoiNoobs's MediaFoundation File Saver preferences"; // 設定情報のテキストを返す
+	return L"品質: 70; 音声ビットレート: 192kbps; unaccelerated"; // 設定情報のテキストを返す
 }
 
 auto constexpr output_plugin_table{ OUTPUT_PLUGIN_TABLE{
 	OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
-	L"MediaFoundation File Saver",					// プラグインの名前
-	L"MPEG-4 AVC/H.264 + AAC-LC (*.mp4)\0*.mp4\0",					// 出力ファイルのフィルタ
-	L"MonogoiNoobs's MediaFoundation File Saver v0.1.0",	// プラグインの情報
+	L"簡易H.264出力",					// プラグインの名前
+	L"MPEG-4 AVC/H.264 + AAC-LC (*.mp4)\0*.mp4",					// 出力ファイルのフィルタ
+	L"簡易H.264出力 v0.1.0",	// プラグインの情報
 	func_output,									// 出力時に呼ばれる関数へのポインタ
 	func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 	func_get_config_text,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
