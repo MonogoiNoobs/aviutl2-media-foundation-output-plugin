@@ -17,15 +17,17 @@ import std;
 //#pragma comment(lib, "d3d11")
 #pragma comment(lib, "User32")
 
-auto constinit CONFIG_INI_PATH{ LR"(.\MFOutput.ini)" };
+auto const constinit CONFIG_INI_PATH{ LR"(C:\ProgramData\aviutl2\Plugin\MFOutput.ini)" };
 
-uint32_t constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noexcept
+auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noexcept
 {
 	return (audio_ch * bit) / 8;
 }
 
 [[nodiscard]] auto make_sink_writer(wchar_t const *const &output_name)
 {
+	// Hardware acceleration requires NV12 as the input.
+
 	//D3D_FEATURE_LEVEL feature_levels[]{
 	//	D3D_FEATURE_LEVEL_11_1,
 	//	D3D_FEATURE_LEVEL_11_0,
@@ -77,6 +79,8 @@ uint32_t constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) 
 
 [[nodiscard]] auto configure_audio_stream(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, uint32_t const &output_bit_rate)
 {
+	__assume(output_bit_rate <= 3);
+
 	auto output_audio_media_type{ wil::com_ptr<IMFMediaType>{} };
 	THROW_IF_FAILED(MFCreateMediaType(&output_audio_media_type));
 
@@ -95,6 +99,8 @@ uint32_t constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) 
 
 auto configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, DWORD const &video_index, uint32_t const &quality)
 {
+	__assume(quality <= 100);
+
 	uint32_t image_size{};
 	THROW_IF_FAILED(MFCalculateImageSize(MFVideoFormat_YUY2, oip->w, oip->h, &image_size));
 
@@ -150,7 +156,7 @@ auto initialize_sink_writer(OUTPUT_INFO const *const &oip)
 	return std::make_pair(sink_writer, std::make_pair(video_index, audio_index));
 }
 
-auto write_video_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int const &f, DWORD const &index, long long const &time_stamp, long const &default_stride)
+auto constexpr write_video_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int const &f, DWORD const &index, long long const &time_stamp, long const &default_stride)
 {
 	if (oip->func_is_abort()) return false;
 
@@ -189,7 +195,7 @@ auto write_video_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sin
 	return true;
 }
 
-auto write_audio_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int const &n, DWORD const &index)
+auto constexpr write_audio_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int const &n, DWORD const &index)
 {
 	if (oip->func_is_abort()) return false;
 
@@ -263,10 +269,10 @@ abort:
 
 wchar_t quality_wchar{};
 
-intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, WPARAM w_param, LPARAM)
+intptr_t constexpr CALLBACK config_dialog_proc(HWND dialog, uint32_t message, WPARAM w_param, LPARAM)
 {
 	auto reset{ [&](){
-		SetDlgItemTextW(dialog, IDC_EDIT1, L"70");
+		THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, L"70"));
 		SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_SETCURSEL, 3, NULL);
 	} };
 
@@ -281,7 +287,7 @@ intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, WPARAM w_par
 		SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_ADDSTRING, NULL, reinterpret_cast<LPARAM>(L"192"));
 
 		GetPrivateProfileStringW(L"h264", L"quality", L"70", &quality_wchar, 3, CONFIG_INI_PATH);
-		SetDlgItemTextW(dialog, IDC_EDIT1, &quality_wchar);
+		THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, &quality_wchar));
 		SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_SETCURSEL, GetPrivateProfileIntW(L"h264", L"audioBitRate", 3, CONFIG_INI_PATH), NULL);
 
 		return false;
@@ -298,28 +304,25 @@ intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, WPARAM w_par
 			quality = GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false) ;
 			if (quality > 100 || quality == 0)
 			{
-				MessageBoxW(dialog, L"映像品質は1〜100の範囲で指定してください。", L"エラー", MB_OK | MB_ICONERROR);
+				MessageBoxW(dialog, L"映像品質は1〜100の範囲で指定してください。", nullptr, MB_OK | MB_ICONERROR);
 				return false;
 			}
 
 			GetDlgItemTextW(dialog, IDC_EDIT1, &quality_wchar, 3);
 			_ltow_s(static_cast<long>(SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_GETCURSEL, NULL, NULL)), audio_bit_rate_wchar, _countof(audio_bit_rate_wchar), 10);
-			WritePrivateProfileStringW(L"h264", L"quality", &quality_wchar, CONFIG_INI_PATH);
-			WritePrivateProfileStringW(L"h264", L"audioBitRate", audio_bit_rate_wchar, CONFIG_INI_PATH);
-			EndDialog(dialog, IDOK);
-			goto close;
+			THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"h264", L"quality", &quality_wchar, CONFIG_INI_PATH));
+			THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"h264", L"audioBitRate", audio_bit_rate_wchar, CONFIG_INI_PATH));
+			THROW_IF_WIN32_BOOL_FALSE(EndDialog(dialog, IDOK));
+			return true;
 		case IDCANCEL:
-			EndDialog(dialog, IDCANCEL);
-			goto close;
+			THROW_IF_WIN32_BOOL_FALSE(EndDialog(dialog, IDCANCEL));
+			return true;
 		default:
 			return false;
 		}
 	default:
 		return false;
 	}
-
-close:
-	return true;
 }
 
 auto func_config(HWND window, HINSTANCE instance)
@@ -345,12 +348,12 @@ auto constexpr output_plugin_table{ OUTPUT_PLUGIN_TABLE{
 	nullptr,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 } };
 
-extern "C" __declspec(dllexport) auto GetOutputPluginTable()
+extern "C" __declspec(dllexport) auto constexpr GetOutputPluginTable()
 {
 	return &output_plugin_table;
 }
 
-auto APIENTRY DllMain(HMODULE, DWORD, void *)
+auto const APIENTRY DllMain(HMODULE, DWORD, void *)
 {
 	return true;
 }
