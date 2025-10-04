@@ -1,56 +1,73 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#include <windowsx.h>
 #include <mfapi.h>
 #include <mfidl.h> // Do NOT remove this or Mfreadwrite.h will fail.
 #include <mfreadwrite.h>
 #include <wil/com.h>
 #include "output2.h"
-//#include <D3D11.h>
+#include <D3D11.h>
 #include <codecapi.h>
+#include <Wmcodecdsp.h>
 #include "resource.h"
+#include "Rgb2NV12.h"
 import std;
 
 #pragma comment(lib, "Mfplat")
 #pragma comment(lib, "Mfreadwrite")
 #pragma comment(lib, "Mfuuid")
-//#pragma comment(lib, "d3d11")
+#pragma comment(lib, "d3d11")
 #pragma comment(lib, "User32")
 
 auto const constinit CONFIG_INI_PATH{ LR"(C:\ProgramData\aviutl2\Plugin\MFOutput.ini)" };
+
+std::array<D3D_FEATURE_LEVEL, 7> const constinit feature_levels{
+	D3D_FEATURE_LEVEL_11_1,
+	D3D_FEATURE_LEVEL_11_0,
+	D3D_FEATURE_LEVEL_10_1,
+	D3D_FEATURE_LEVEL_10_0,
+	D3D_FEATURE_LEVEL_9_3,
+	D3D_FEATURE_LEVEL_9_2,
+	D3D_FEATURE_LEVEL_9_1
+};
 
 auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noexcept
 {
 	return (audio_ch * bit) / 8;
 }
 
-[[nodiscard]] auto make_sink_writer(wchar_t const *const &output_name)
+auto constexpr get_suitable_input_video_format_guid(bool const &is_accelerated)
 {
-	// Hardware acceleration requires NV12 as the input.
+	return is_accelerated ? MFVideoFormat_NV12 : MFVideoFormat_YUY2;
+}
 
-	//D3D_FEATURE_LEVEL feature_levels[]{
-	//	D3D_FEATURE_LEVEL_11_1,
-	//	D3D_FEATURE_LEVEL_11_0,
-	//	D3D_FEATURE_LEVEL_10_1,
-	//	D3D_FEATURE_LEVEL_10_0,
-	//	D3D_FEATURE_LEVEL_9_3,
-	//	D3D_FEATURE_LEVEL_9_2,
-	//	D3D_FEATURE_LEVEL_9_1
-	//};
+auto const get_suitable_output_video_format_guid(std::filesystem::path const &extension, unsigned int const &preferred_mp4_format)
+{
+	if (extension == L".mp4") return preferred_mp4_format ? MFVideoFormat_HEVC : MFVideoFormat_H264;
+	if (extension == L".wmv") return MFVideoFormat_WVC1;
+	return MFVideoFormat_H264;
+}
 
-	//auto d3d11_device{ wil::com_ptr<ID3D11Device>{} };
-	//THROW_IF_FAILED(D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, feature_levels, sizeof(feature_levels) / sizeof(D3D_FEATURE_LEVEL), D3D11_SDK_VERSION, &d3d11_device, NULL, NULL));
-
-	//auto dxgi_device_manager{ wil::com_ptr<IMFDXGIDeviceManager>{} };
-	//unsigned int reset_token{};
-	//THROW_IF_FAILED(MFCreateDXGIDeviceManager(&reset_token, &dxgi_device_manager));
-	//THROW_IF_FAILED(dxgi_device_manager->ResetDevice(d3d11_device.get(), reset_token));
-
+[[nodiscard]] auto make_sink_writer(wchar_t const *const &output_name, bool const &is_accelerated)
+{
 	auto sink_writer_attributes{ wil::com_ptr<IMFAttributes>{} };
-	THROW_IF_FAILED(MFCreateAttributes(&sink_writer_attributes, 4));
-	//THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true));
-	//THROW_IF_FAILED(sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, dxgi_device_manager.get()));
+	THROW_IF_FAILED(MFCreateAttributes(&sink_writer_attributes, 3));
 	THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, true));
+
+	if (is_accelerated)
+	{
+		auto d3d11_device{ wil::com_ptr<ID3D11Device>{} };
+		THROW_IF_FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, feature_levels.data(), static_cast<unsigned int>(feature_levels.size()), D3D11_SDK_VERSION, &d3d11_device, nullptr, nullptr));
+
+		auto dxgi_device_manager{ wil::com_ptr<IMFDXGIDeviceManager>{} };
+		unsigned int reset_token{};
+		THROW_IF_FAILED(MFCreateDXGIDeviceManager(&reset_token, &dxgi_device_manager));
+		THROW_IF_FAILED(dxgi_device_manager->ResetDevice(d3d11_device.get(), reset_token));
+
+		THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true));
+		THROW_IF_FAILED(sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, dxgi_device_manager.get()));
+	}
 
 	auto sink_writer{ wil::com_ptr<IMFSinkWriter>{} };
 	THROW_IF_FAILED(MFCreateSinkWriterFromURL(output_name, nullptr, sink_writer_attributes.get(), &sink_writer));
@@ -58,18 +75,30 @@ auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noex
 	return sink_writer;
 }
 
-[[nodiscard]] auto configure_video_stream(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer)
+[[nodiscard]] auto configure_video_stream(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, GUID const &output_video_format)
 {
 	auto output_video_media_type{ wil::com_ptr<IMFMediaType>{} };
 	THROW_IF_FAILED(MFCreateMediaType(&output_video_media_type));
 
 	THROW_IF_FAILED(output_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
-	THROW_IF_FAILED(output_video_media_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264));
+	THROW_IF_FAILED(output_video_media_type->SetGUID(MF_MT_SUBTYPE, output_video_format));
+	THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709));
+	THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235));
+	THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709));
+	THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709));
 	THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_AVG_BITRATE, 12000000));
 	THROW_IF_FAILED(MFSetAttributeSize(output_video_media_type.get(), MF_MT_FRAME_SIZE, oip->w, oip->h));
 	THROW_IF_FAILED(MFSetAttributeRatio(output_video_media_type.get(), MF_MT_FRAME_RATE, oip->rate, oip->scale));
 	THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
-	THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High));
+	if (output_video_format == MFVideoFormat_H264)
+	{
+		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High));
+	}
+	if (output_video_format == MFVideoFormat_HEVC)
+	{
+		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH265VProfile_Main_420_8));
+		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_LEVEL, eAVEncH265VLevel5_1));
+	}
 
 	DWORD video_index{};
 	THROW_IF_FAILED(sink_writer->AddStream(output_video_media_type.get(), &video_index));
@@ -77,7 +106,7 @@ auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noex
 	return video_index;
 }
 
-[[nodiscard]] auto configure_audio_stream(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, uint32_t const &output_bit_rate)
+[[nodiscard]] auto configure_audio_stream(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, uint32_t const &output_bit_rate, GUID const &output_video_format)
 {
 	__assume(output_bit_rate <= 3);
 
@@ -85,7 +114,7 @@ auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noex
 	THROW_IF_FAILED(MFCreateMediaType(&output_audio_media_type));
 
 	THROW_IF_FAILED(output_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
-	THROW_IF_FAILED(output_audio_media_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_AAC));
+	THROW_IF_FAILED(output_audio_media_type->SetGUID(MF_MT_SUBTYPE, output_video_format == MFVideoFormat_WVC1 ? MFAudioFormat_WMAudioV9 : MFAudioFormat_AAC));
 	THROW_IF_FAILED(output_audio_media_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, oip->audio_ch));
 	THROW_IF_FAILED(output_audio_media_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, (3 + output_bit_rate) * 4000));
 	THROW_IF_FAILED(output_audio_media_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, oip->audio_rate));
@@ -97,20 +126,20 @@ auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noex
 	return audio_index;
 }
 
-auto configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, DWORD const &video_index, uint32_t const &quality)
+auto configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, DWORD const &video_index, uint32_t const &quality, bool const &is_accelerated, GUID const &output_video_format)
 {
 	__assume(quality <= 100);
 
 	uint32_t image_size{};
-	THROW_IF_FAILED(MFCalculateImageSize(MFVideoFormat_YUY2, oip->w, oip->h, &image_size));
+	THROW_IF_FAILED(MFCalculateImageSize(get_suitable_input_video_format_guid(is_accelerated), oip->w, oip->h, &image_size));
 
 	//long default_stride{};
-	//THROW_IF_FAILED(MFGetStrideForBitmapInfoHeader(MFVideoFormat_YUY2.Data1, oip->w, &default_stride));
+	//THROW_IF_FAILED(MFGetStrideForBitmapInfoHeader(output_video_format.Data1, oip->w, &default_stride));
 
 	auto input_video_media_type{ wil::com_ptr<IMFMediaType>{} };
 	THROW_IF_FAILED(MFCreateMediaType(&input_video_media_type));
 	THROW_IF_FAILED(input_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
-	THROW_IF_FAILED(input_video_media_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2));
+	THROW_IF_FAILED(input_video_media_type->SetGUID(MF_MT_SUBTYPE, get_suitable_input_video_format_guid(is_accelerated)));
 	THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
 	//THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_DEFAULT_STRIDE, default_stride));
 	THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_SAMPLE_SIZE, image_size));
@@ -119,12 +148,31 @@ auto configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &
 	THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_FRAME_RATE, oip->rate, oip->scale));
 	THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
 
+	if (is_accelerated)
+	{
+		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709));
+		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_0_255));
+		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709));
+		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709));
+	}
+
 	auto video_encoder_attributes{ wil::com_ptr<IMFAttributes>{} };
 	THROW_IF_FAILED(MFCreateAttributes(&video_encoder_attributes, 4));
-	THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncH264CABACEnable, true));
-	THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 2));
-	THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_Quality));
-	THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncCommonQuality, quality));
+
+	if (output_video_format == MFVideoFormat_H264 || output_video_format == MFVideoFormat_HEVC)
+	{
+		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncH264CABACEnable, true));
+		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 2));
+		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_Quality));
+		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncCommonQuality, quality));
+	}
+	if (output_video_format == MFVideoFormat_WVC1)
+	{
+		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(MFPKEY_COMPRESSIONOPTIMIZATIONTYPE.fmtid, 1));
+		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(MFPKEY_VBRENABLED.fmtid, true));
+		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(MFPKEY_CONSTRAIN_ENUMERATED_VBRQUALITY.fmtid, true));
+		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(MFPKEY_DESIRED_VBRQUALITY.fmtid, quality));
+	}
 
 	THROW_IF_FAILED(sink_writer->SetInputMediaType(video_index, input_video_media_type.get(), video_encoder_attributes.get()));
 }
@@ -142,40 +190,52 @@ auto configure_audio_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &
 	THROW_IF_FAILED(sink_writer->SetInputMediaType(audio_index, input_audio_media_type.get(), nullptr));
 }
 
-auto initialize_sink_writer(OUTPUT_INFO const *const &oip)
+std::tuple<wil::com_ptr<IMFSinkWriter>, DWORD, DWORD> initialize_sink_writer(OUTPUT_INFO const *const &oip, bool const &is_accelerated, GUID const &output_video_format)
 {
-	auto const sink_writer{ make_sink_writer(oip->savefile) };
+	auto const sink_writer{ make_sink_writer(oip->savefile, is_accelerated) };
 
-	auto video_index{ configure_video_stream(oip, sink_writer.get()) };
-	auto audio_index{ configure_audio_stream(oip, sink_writer.get(), GetPrivateProfileIntW(L"h264", L"audioBitRate", 3, CONFIG_INI_PATH)) };
-	configure_video_input(oip, sink_writer.get(), video_index, GetPrivateProfileIntW(L"h264", L"quality", 70, CONFIG_INI_PATH));
+	auto video_index{ configure_video_stream(oip, sink_writer.get(), output_video_format) };
+	auto audio_index{ configure_audio_stream(oip, sink_writer.get(), GetPrivateProfileIntW(L"mp4", L"audioBitRate", 3, CONFIG_INI_PATH), output_video_format) };
+	configure_video_input(oip, sink_writer.get(), video_index, GetPrivateProfileIntW(L"mp4", L"videoQuality", 70, CONFIG_INI_PATH), is_accelerated, output_video_format);
 	configure_audio_input(oip, sink_writer.get(), audio_index);
 
 	THROW_IF_FAILED(sink_writer->BeginWriting());
 
-	return std::make_pair(sink_writer, std::make_pair(video_index, audio_index));
+	return { sink_writer, video_index, audio_index };
 }
 
-auto constexpr write_video_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int const &f, DWORD const &index, long long const &time_stamp, long const &default_stride)
+auto constexpr write_video_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int const &f, DWORD const &index, long long const &time_stamp, long const &default_stride, bool const &is_accelerated)
 {
 	if (oip->func_is_abort()) return false;
 
 	oip->func_rest_time_disp(static_cast<int>(f), oip->n);
+	
+	BYTE *frame_image{};
 
-	auto frame_dib_pixel_ptr{ static_cast<BYTE *>(oip->func_get_video(f, FCC('YUY2'))) };
-	THROW_IF_NULL_ALLOC(frame_dib_pixel_ptr);
+	if (is_accelerated)
+	{
+		auto frame_dib_pixel_ptr{ static_cast<BYTE *>(oip->func_get_video(f, BI_RGB)) };
+		THROW_IF_NULL_ALLOC(frame_dib_pixel_ptr);
+		auto flipped{ new BYTE[oip->w * oip->h * 3]{} };
+		Bgr2RgbAndReverseUpDown(frame_dib_pixel_ptr, oip->w, oip->h, flipped);
+		auto nv12{ new BYTE[oip->w * oip->h * 3]{} };
+		Rgb2NV12_useSSE(flipped, oip->w, oip->h, nv12);
+		delete[] flipped;
+		frame_image = nv12;
+	}
+	else frame_image = static_cast<BYTE *>(oip->func_get_video(f, FCC('YUY2')));
 
 	auto video_buffer{ wil::com_ptr<IMFMediaBuffer>{} };
-	THROW_IF_FAILED(MFCreate2DMediaBuffer(oip->w, oip->h, MFVideoFormat_YUY2.Data1, false, &video_buffer));
+	THROW_IF_FAILED(MFCreate2DMediaBuffer(oip->w, oip->h, get_suitable_input_video_format_guid(is_accelerated).Data1, false, &video_buffer));
 
 	BYTE *scanline{};
 	long stride{};
 	BYTE *buffer_start{};
 	DWORD buffer_length{};
 	THROW_IF_FAILED(video_buffer.query<IMF2DBuffer2>()->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_start, &buffer_length));
-	THROW_IF_FAILED(MFCopyImage(scanline, stride, frame_dib_pixel_ptr, default_stride, default_stride, oip->h));
+	THROW_IF_FAILED(MFCopyImage(scanline, stride, frame_image, default_stride, default_stride, oip->h));
 	THROW_IF_FAILED(video_buffer.query<IMF2DBuffer2>()->Unlock2D());
-
+	if (is_accelerated) delete[] frame_image, frame_image = nullptr;
 	// “Generally, you should avoid mixing calls to IMF2DBuffer and IMFMediaBuffer methods on the same media buffer.”
 	//     —Microsoft, in https://learn.microsoft.com/en-us/windows/win32/api/mfobjects/nn-mfobjects-imf2dbuffer
 	// 
@@ -203,26 +263,26 @@ auto constexpr write_audio_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *
 
 	// bytes per audio-frame (block align)
 	auto const block_align{ get_pcm_block_alignment(static_cast<uint32_t>(oip->audio_ch), 16) }; // bytes per audio-frame
-	auto const max_sample_size{ static_cast<int>(block_align * oip->audio_rate) }; // bytes per second
+	auto const max_samples{ static_cast<int>(block_align * oip->audio_rate) }; // bytes per second
 
-	int read_audio_sample_size{};
-	auto audio_data{ oip->func_get_audio(n, max_sample_size, &read_audio_sample_size, WAVE_FORMAT_PCM) };
+	int actual_samples{};
+	auto audio_data{ oip->func_get_audio(n, max_samples, &actual_samples, WAVE_FORMAT_PCM) };
 	THROW_IF_NULL_ALLOC(audio_data);
-	if (!read_audio_sample_size) return true;
+	if (!actual_samples) return true;
 
 	// compute number of audio-frames (samples per channel) in buffer
-	auto const frames{ static_cast<int64_t>(read_audio_sample_size) / static_cast<int64_t>(block_align) };
+	auto const frames{ static_cast<int64_t>(actual_samples) / static_cast<int64_t>(block_align) };
 	auto const sample_duration{ static_cast<int64_t>(frames) * 10'000'000LL / oip->audio_rate }; // 100-ns units
 	auto const sample_time{ static_cast<int64_t>(n) * 10'000'000LL / oip->audio_rate }; // 100-ns units for start
 
 	auto audio_buffer{ wil::com_ptr<IMFMediaBuffer>{} };
-	THROW_IF_FAILED(MFCreateMemoryBuffer(static_cast<DWORD>(read_audio_sample_size), &audio_buffer));
+	THROW_IF_FAILED(MFCreateAlignedMemoryBuffer(static_cast<DWORD>(actual_samples), MF_2_BYTE_ALIGNMENT, &audio_buffer));
 	BYTE *media_data{};
 	DWORD media_data_max_length{};
 	THROW_IF_FAILED(audio_buffer->Lock(&media_data, &media_data_max_length, nullptr));
-	memcpy_s(media_data, media_data_max_length, audio_data, static_cast<size_t>(read_audio_sample_size));
+	memcpy_s(media_data, media_data_max_length, audio_data, static_cast<size_t>(actual_samples));
 	THROW_IF_FAILED(audio_buffer->Unlock());
-	THROW_IF_FAILED(audio_buffer->SetCurrentLength(static_cast<DWORD>(read_audio_sample_size)));
+	THROW_IF_FAILED(audio_buffer->SetCurrentLength(static_cast<DWORD>(actual_samples)));
 
 	auto audio_sample{ wil::com_ptr<IMFSample>{} };
 	THROW_IF_FAILED(MFCreateSample(&audio_sample));
@@ -249,15 +309,19 @@ auto func_output(OUTPUT_INFO *oip)
 	uint64_t time_stamp{};
 	THROW_IF_FAILED(MFFrameRateToAverageTimePerFrame(oip->rate, oip->scale, &time_stamp));
 
-	long default_stride{};
-	THROW_IF_FAILED(MFGetStrideForBitmapInfoHeader(MFVideoFormat_YUY2.Data1, oip->w, &default_stride));
+	auto const path{ std::filesystem::path{ oip->savefile } };
+	auto const output_video_format{ get_suitable_output_video_format_guid(path.extension(), GetPrivateProfileIntW(L"mp4", L"videoFormat", 0, CONFIG_INI_PATH))};
 
-	auto const [sink_writer, stream_indices] { initialize_sink_writer(oip) };
-	auto const &[video_index, audio_index] { stream_indices };
+	auto const is_accelerated{ GetPrivateProfileIntW(L"general", L"useHardware", BST_UNCHECKED, CONFIG_INI_PATH) == BST_CHECKED };
+
+	long default_stride{};
+	THROW_IF_FAILED(MFGetStrideForBitmapInfoHeader(get_suitable_input_video_format_guid(is_accelerated).Data1, oip->w, &default_stride));
+
+	auto const [sink_writer, video_index, audio_index] { initialize_sink_writer(oip, is_accelerated, output_video_format) };
 
 	oip->func_set_buffer_size(32, 32);
 	for (auto f{ 0 }; f < oip->n; ++f)
-		if (!write_video_sample(oip, sink_writer.get(), f, video_index, time_stamp, default_stride)) goto abort;
+		if (!write_video_sample(oip, sink_writer.get(), f, video_index, time_stamp, default_stride, is_accelerated)) goto abort;
 	for (auto n{ 0 }; n < oip->audio_n; n += oip->audio_rate)
 		if (!write_audio_sample(oip, sink_writer.get(), n, audio_index)) goto abort;
 
@@ -272,23 +336,33 @@ wchar_t quality_wchar{};
 intptr_t constexpr CALLBACK config_dialog_proc(HWND dialog, uint32_t message, WPARAM w_param, LPARAM)
 {
 	auto reset{ [&](){
+		ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), 0);
 		THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, L"70"));
-		SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_SETCURSEL, 3, NULL);
+		ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), 3);
+		Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), BST_UNCHECKED);
 	} };
 
 	uint32_t quality{};
 	wchar_t audio_bit_rate_wchar[4]{};
+	wchar_t video_format_wchar[2]{};
 	switch (message)
 	{
 	case WM_INITDIALOG:
-		SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_ADDSTRING, NULL, reinterpret_cast<LPARAM>(L"96"));
-		SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_ADDSTRING, NULL, reinterpret_cast<LPARAM>(L"128"));
-		SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_ADDSTRING, NULL, reinterpret_cast<LPARAM>(L"160"));
-		SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_ADDSTRING, NULL, reinterpret_cast<LPARAM>(L"192"));
+		ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"H.264");
+		ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"HEVC");
 
-		GetPrivateProfileStringW(L"h264", L"quality", L"70", &quality_wchar, 3, CONFIG_INI_PATH);
+		ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"96");
+		ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"128");
+		ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"160");
+		ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"192");
+
+		ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), GetPrivateProfileIntW(L"mp4", L"videoFormat", 0, CONFIG_INI_PATH));
+
+		GetPrivateProfileStringW(L"mp4", L"videoQuality", L"70", &quality_wchar, 3, CONFIG_INI_PATH);
 		THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, &quality_wchar));
-		SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_SETCURSEL, GetPrivateProfileIntW(L"h264", L"audioBitRate", 3, CONFIG_INI_PATH), NULL);
+		ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), GetPrivateProfileIntW(L"mp4", L"audioBitRate", 3, CONFIG_INI_PATH));
+
+		Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), GetPrivateProfileIntW(L"general", L"useHardware", BST_UNCHECKED, CONFIG_INI_PATH));
 
 		return false;
 	case WM_COMMAND:
@@ -301,17 +375,23 @@ intptr_t constexpr CALLBACK config_dialog_proc(HWND dialog, uint32_t message, WP
 			}
 			return false;
 		case IDOK:
-			quality = GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false) ;
+			quality = GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false);
 			if (quality > 100 || quality == 0)
 			{
 				MessageBoxW(dialog, L"映像品質は1〜100の範囲で指定してください。", nullptr, MB_OK | MB_ICONERROR);
 				return false;
 			}
 
+			_ltow_s(static_cast<long>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO2))), video_format_wchar, _countof(video_format_wchar), 10);
+			THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"mp4", L"videoFormat", video_format_wchar, CONFIG_INI_PATH));
+
 			GetDlgItemTextW(dialog, IDC_EDIT1, &quality_wchar, 3);
-			_ltow_s(static_cast<long>(SendMessageW(GetDlgItem(dialog, IDC_COMBO1), CB_GETCURSEL, NULL, NULL)), audio_bit_rate_wchar, _countof(audio_bit_rate_wchar), 10);
-			THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"h264", L"quality", &quality_wchar, CONFIG_INI_PATH));
-			THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"h264", L"audioBitRate", audio_bit_rate_wchar, CONFIG_INI_PATH));
+			THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"mp4", L"videoQuality", &quality_wchar, CONFIG_INI_PATH));
+
+			_ltow_s(static_cast<long>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO1))), audio_bit_rate_wchar, _countof(audio_bit_rate_wchar), 10);
+			THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"mp4", L"audioBitRate", audio_bit_rate_wchar, CONFIG_INI_PATH));
+
+			THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"useHardware", Button_GetCheck(GetDlgItem(dialog, IDC_CHECK1)) ? L"1" : L"0", CONFIG_INI_PATH));
 			THROW_IF_WIN32_BOOL_FALSE(EndDialog(dialog, IDOK));
 			return true;
 		case IDCANCEL:
@@ -335,17 +415,17 @@ auto func_config(HWND window, HINSTANCE instance)
 //auto func_get_config_text()
 //{
 //	// ここに出力設定のテキスト情報を実装します
-//	return L"hoge"; // 設定情報のテキストを返す
+//	return L"a"; // 設定情報のテキストを返す
 //}
 
 auto constexpr output_plugin_table{ OUTPUT_PLUGIN_TABLE{
 	OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
-	L"簡易H.264出力",					// プラグインの名前
-	L"MPEG-4 AVC/H.264 + AAC-LC (*.mp4)\0*.mp4",					// 出力ファイルのフィルタ
-	L"簡易H.264出力 v0.1.0",	// プラグインの情報
+	L"MFOutput",					// プラグインの名前
+	L"MPEG-4 (*.mp4)\0*.mp4",					// 出力ファイルのフィルタ
+	L"MFOutput v0.1.0",	// プラグインの情報
 	func_output,									// 出力時に呼ばれる関数へのポインタ
 	func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
-	nullptr,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
+	nullptr ,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 } };
 
 extern "C" __declspec(dllexport) auto constexpr GetOutputPluginTable()

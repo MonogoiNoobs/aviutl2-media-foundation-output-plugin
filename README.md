@@ -1,4 +1,4 @@
-# 簡易H.264出力
+# MFOutput
 
 Windows標準のMicrosoft Media Foundationに出力させるAviUtl ExEdit2用プラグインです。開発中です。
 
