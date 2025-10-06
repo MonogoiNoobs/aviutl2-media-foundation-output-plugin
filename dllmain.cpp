@@ -49,6 +49,13 @@ auto const get_suitable_output_video_format_guid(std::filesystem::path const &ex
 	return MFVideoFormat_H264;
 }
 
+auto const add_windows_media_qvba_activation_media_attributes(IMFAttributes *const &attributes, uint32_t const &quality)
+{
+	THROW_IF_FAILED(attributes->SetUINT32(MFPKEY_VBRENABLED.fmtid, true));
+	THROW_IF_FAILED(attributes->SetUINT32(MFPKEY_CONSTRAIN_ENUMERATED_VBRQUALITY.fmtid, true));
+	THROW_IF_FAILED(attributes->SetUINT32(MFPKEY_DESIRED_VBRQUALITY.fmtid, quality));
+}
+
 [[nodiscard]] auto make_sink_writer(wchar_t const *const &output_name, bool const &is_accelerated)
 {
 	auto sink_writer_attributes{ wil::com_ptr<IMFAttributes>{} };
@@ -75,7 +82,7 @@ auto const get_suitable_output_video_format_guid(std::filesystem::path const &ex
 	return sink_writer;
 }
 
-[[nodiscard]] auto configure_video_stream(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, GUID const &output_video_format)
+[[nodiscard]] auto const configure_video_stream(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, GUID const &output_video_format)
 {
 	auto output_video_media_type{ wil::com_ptr<IMFMediaType>{} };
 	THROW_IF_FAILED(MFCreateMediaType(&output_video_media_type));
@@ -126,7 +133,7 @@ auto const get_suitable_output_video_format_guid(std::filesystem::path const &ex
 	return audio_index;
 }
 
-auto configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, DWORD const &video_index, uint32_t const &quality, bool const &is_accelerated, GUID const &output_video_format)
+auto const configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, DWORD const &video_index, uint32_t const &quality, bool const &is_accelerated, GUID const &output_video_format)
 {
 	__assume(quality <= 100);
 
@@ -148,13 +155,13 @@ auto configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &
 	THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_FRAME_RATE, oip->rate, oip->scale));
 	THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
 
-	if (is_accelerated)
-	{
-		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709));
-		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_0_255));
-		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709));
-		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709));
-	}
+	//if (is_accelerated)
+	//{
+	//	THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709));
+	//	THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_0_255));
+	//	THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709));
+	//	THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709));
+	//}
 
 	auto video_encoder_attributes{ wil::com_ptr<IMFAttributes>{} };
 	THROW_IF_FAILED(MFCreateAttributes(&video_encoder_attributes, 4));
@@ -169,15 +176,13 @@ auto configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &
 	if (output_video_format == MFVideoFormat_WVC1)
 	{
 		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(MFPKEY_COMPRESSIONOPTIMIZATIONTYPE.fmtid, 1));
-		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(MFPKEY_VBRENABLED.fmtid, true));
-		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(MFPKEY_CONSTRAIN_ENUMERATED_VBRQUALITY.fmtid, true));
-		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(MFPKEY_DESIRED_VBRQUALITY.fmtid, quality));
+		add_windows_media_qvba_activation_media_attributes(video_encoder_attributes.get(), quality);
 	}
 
 	THROW_IF_FAILED(sink_writer->SetInputMediaType(video_index, input_video_media_type.get(), video_encoder_attributes.get()));
 }
 
-auto configure_audio_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, DWORD const &audio_index)
+auto const configure_audio_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, DWORD const &audio_index, uint32_t const &quality, GUID const &output_video_format)
 {
 	auto input_audio_media_type{ wil::com_ptr<IMFMediaType>{} };
 	THROW_IF_FAILED(MFCreateMediaType(&input_audio_media_type));
@@ -187,17 +192,36 @@ auto configure_audio_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &
 	THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, oip->audio_rate));
 	THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, oip->audio_ch));
 
-	THROW_IF_FAILED(sink_writer->SetInputMediaType(audio_index, input_audio_media_type.get(), nullptr));
+	if (output_video_format == MFVideoFormat_WVC1)
+	{
+		auto const block_alignment{ get_pcm_block_alignment(static_cast<uint32_t>(oip->audio_ch), 16) };
+		THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, block_alignment));
+		THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, block_alignment * oip->audio_rate));
+		THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AVG_BITRATE, oip->audio_rate * 16 * oip->audio_ch));
+		THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true));
+		THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_FIXED_SIZE_SAMPLES, true));
+	}
+
+	auto audio_encoder_attributes{ wil::com_ptr<IMFAttributes>{} };
+
+	if (output_video_format == MFVideoFormat_WVC1)
+	{
+		THROW_IF_FAILED(MFCreateAttributes(&audio_encoder_attributes, 3));
+		add_windows_media_qvba_activation_media_attributes(audio_encoder_attributes.get(), quality);
+	}
+
+	THROW_IF_FAILED(sink_writer->SetInputMediaType(audio_index, input_audio_media_type.get(), audio_encoder_attributes.get()));
 }
 
 std::tuple<wil::com_ptr<IMFSinkWriter>, DWORD, DWORD> initialize_sink_writer(OUTPUT_INFO const *const &oip, bool const &is_accelerated, GUID const &output_video_format)
 {
 	auto const sink_writer{ make_sink_writer(oip->savefile, is_accelerated) };
 
+	auto const quality{ GetPrivateProfileIntW(L"mp4", L"videoQuality", 70, CONFIG_INI_PATH) };
 	auto video_index{ configure_video_stream(oip, sink_writer.get(), output_video_format) };
 	auto audio_index{ configure_audio_stream(oip, sink_writer.get(), GetPrivateProfileIntW(L"mp4", L"audioBitRate", 3, CONFIG_INI_PATH), output_video_format) };
-	configure_video_input(oip, sink_writer.get(), video_index, GetPrivateProfileIntW(L"mp4", L"videoQuality", 70, CONFIG_INI_PATH), is_accelerated, output_video_format);
-	configure_audio_input(oip, sink_writer.get(), audio_index);
+	configure_video_input(oip, sink_writer.get(), video_index, quality, is_accelerated, output_video_format);
+	configure_audio_input(oip, sink_writer.get(), audio_index, quality, output_video_format);
 
 	THROW_IF_FAILED(sink_writer->BeginWriting());
 
@@ -267,7 +291,6 @@ auto constexpr write_audio_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *
 
 	int actual_samples{};
 	auto audio_data{ oip->func_get_audio(n, max_samples, &actual_samples, WAVE_FORMAT_PCM) };
-	THROW_IF_NULL_ALLOC(audio_data);
 	if (!actual_samples) return true;
 
 	// compute number of audio-frames (samples per channel) in buffer
@@ -335,7 +358,7 @@ wchar_t quality_wchar{};
 
 intptr_t constexpr CALLBACK config_dialog_proc(HWND dialog, uint32_t message, WPARAM w_param, LPARAM)
 {
-	auto reset{ [&](){
+	auto const reset{ [&](){
 		ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), 0);
 		THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, L"70"));
 		ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), 3);
@@ -421,7 +444,7 @@ auto func_config(HWND window, HINSTANCE instance)
 auto constexpr output_plugin_table{ OUTPUT_PLUGIN_TABLE{
 	OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
 	L"MFOutput",					// プラグインの名前
-	L"MPEG-4 (*.mp4)\0*.mp4",					// 出力ファイルのフィルタ
+	L"MP4 (*.mp4)\0*.mp4\0Advanced Systems Format (*.wmv)\0*.wmv",					// 出力ファイルのフィルタ
 	L"MFOutput v0.1.0",	// プラグインの情報
 	func_output,									// 出力時に呼ばれる関数へのポインタ
 	func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)

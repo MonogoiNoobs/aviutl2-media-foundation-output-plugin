@@ -104,6 +104,7 @@
       <DisableSpecificWarnings>
       </DisableSpecificWarnings>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -135,6 +136,8 @@
       <DisableSpecificWarnings>
       </DisableSpecificWarnings>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -164,6 +167,7 @@
       <DisableSpecificWarnings>
       </DisableSpecificWarnings>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -195,6 +199,8 @@
       <DisableSpecificWarnings>
       </DisableSpecificWarnings>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
