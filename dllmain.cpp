@@ -22,7 +22,7 @@ import std;
 
 auto const constinit CONFIG_INI_PATH{ LR"(C:\ProgramData\aviutl2\Plugin\MFOutput.ini)" };
 
-std::array<D3D_FEATURE_LEVEL, 7> const constinit feature_levels{
+D3D_FEATURE_LEVEL const constinit feature_levels[]{
 	D3D_FEATURE_LEVEL_11_1,
 	D3D_FEATURE_LEVEL_11_0,
 	D3D_FEATURE_LEVEL_10_1,
@@ -42,7 +42,7 @@ auto constexpr get_suitable_input_video_format_guid(bool const &is_accelerated)
 	return is_accelerated ? MFVideoFormat_NV12 : MFVideoFormat_YUY2;
 }
 
-auto const get_suitable_output_video_format_guid(std::filesystem::path const &extension, unsigned int const &preferred_mp4_format)
+auto const get_suitable_output_video_format_guid(std::filesystem::path const &extension, uint32_t const &preferred_mp4_format)
 {
 	if (extension == L".mp4") return preferred_mp4_format ? MFVideoFormat_HEVC : MFVideoFormat_H264;
 	if (extension == L".wmv") return MFVideoFormat_WVC1;
@@ -65,7 +65,7 @@ auto const add_windows_media_qvba_activation_media_attributes(IMFAttributes *con
 	if (is_accelerated)
 	{
 		auto d3d11_device{ wil::com_ptr<ID3D11Device>{} };
-		THROW_IF_FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, feature_levels.data(), static_cast<unsigned int>(feature_levels.size()), D3D11_SDK_VERSION, &d3d11_device, nullptr, nullptr));
+		THROW_IF_FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, feature_levels, _countof(feature_levels), D3D11_SDK_VERSION, &d3d11_device, nullptr, nullptr));
 
 		auto dxgi_device_manager{ wil::com_ptr<IMFDXGIDeviceManager>{} };
 		unsigned int reset_token{};
@@ -97,14 +97,18 @@ auto const add_windows_media_qvba_activation_media_attributes(IMFAttributes *con
 	THROW_IF_FAILED(MFSetAttributeSize(output_video_media_type.get(), MF_MT_FRAME_SIZE, oip->w, oip->h));
 	THROW_IF_FAILED(MFSetAttributeRatio(output_video_media_type.get(), MF_MT_FRAME_RATE, oip->rate, oip->scale));
 	THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
-	if (output_video_format == MFVideoFormat_H264)
+
+	switch (output_video_format.Data1)
 	{
+	case FCC('H264'):
 		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High));
-	}
-	if (output_video_format == MFVideoFormat_HEVC)
-	{
+		break;
+	case FCC('HEVC'):
 		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH265VProfile_Main_420_8));
 		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_LEVEL, eAVEncH265VLevel5_1));
+		break;
+	default:
+		break;
 	}
 
 	DWORD video_index{};
@@ -166,17 +170,20 @@ auto const configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *c
 	auto video_encoder_attributes{ wil::com_ptr<IMFAttributes>{} };
 	THROW_IF_FAILED(MFCreateAttributes(&video_encoder_attributes, 4));
 
-	if (output_video_format == MFVideoFormat_H264 || output_video_format == MFVideoFormat_HEVC)
+	switch (output_video_format.Data1)
 	{
+	default:
+	case FCC('H264'):
 		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncH264CABACEnable, true));
+	case FCC('HEVC'):
 		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 2));
 		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_Quality));
 		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(CODECAPI_AVEncCommonQuality, quality));
-	}
-	if (output_video_format == MFVideoFormat_WVC1)
-	{
+		break;
+	case FCC('WVC1'):
 		THROW_IF_FAILED(video_encoder_attributes->SetUINT32(MFPKEY_COMPRESSIONOPTIMIZATIONTYPE.fmtid, 1));
 		add_windows_media_qvba_activation_media_attributes(video_encoder_attributes.get(), quality);
+		break;
 	}
 
 	THROW_IF_FAILED(sink_writer->SetInputMediaType(video_index, input_video_media_type.get(), video_encoder_attributes.get()));
