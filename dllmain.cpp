@@ -451,7 +451,7 @@ auto func_config(HWND window, HINSTANCE instance)
 auto constexpr output_plugin_table{ OUTPUT_PLUGIN_TABLE{
 	OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
 	L"MFOutput",					// プラグインの名前
-	L"MP4 (*.mp4)\0*.mp4\0Advanced Systems Format (*.wmv)\0*.wmv",					// 出力ファイルのフィルタ
+	L"MP4 (*.mp4)\0*.mp4\0Advanced Systems Format (*.wmv)\0*.wmv\0",					// 出力ファイルのフィルタ
 	L"MFOutput v0.1.0",	// プラグインの情報
 	func_output,									// 出力時に呼ばれる関数へのポインタ
 	func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
