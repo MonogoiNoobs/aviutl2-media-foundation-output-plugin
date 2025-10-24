@@ -37,12 +37,12 @@ auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noex
 	return (audio_ch * bit) / 8;
 }
 
-auto constexpr get_suitable_input_video_format_guid(bool const &is_accelerated)
+auto constexpr get_suitable_input_video_format_guid(bool const &is_accelerated) noexcept
 {
 	return is_accelerated ? MFVideoFormat_NV12 : MFVideoFormat_YUY2;
 }
 
-auto const get_suitable_output_video_format_guid(std::filesystem::path const &extension, uint32_t const &preferred_mp4_format)
+auto const get_suitable_output_video_format_guid(std::filesystem::path const &extension, uint32_t const &preferred_mp4_format) noexcept
 {
 	if (extension == L".mp4") return preferred_mp4_format ? MFVideoFormat_HEVC : MFVideoFormat_H264;
 	if (extension == L".wmv") return MFVideoFormat_WVC1;
@@ -458,12 +458,12 @@ auto constexpr output_plugin_table{ OUTPUT_PLUGIN_TABLE{
 	nullptr ,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 } };
 
-extern "C" __declspec(dllexport) auto constexpr GetOutputPluginTable()
+extern "C" __declspec(dllexport) auto constexpr GetOutputPluginTable() noexcept
 {
 	return &output_plugin_table;
 }
 
-auto const APIENTRY DllMain(HMODULE, DWORD, void *)
+auto const APIENTRY DllMain(HMODULE, DWORD, void *) noexcept
 {
 	return true;
 }
