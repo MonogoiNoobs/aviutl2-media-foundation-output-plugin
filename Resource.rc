@@ -18,37 +18,11 @@
 #undef APSTUDIO_READONLY_SYMBOLS
 
 /////////////////////////////////////////////////////////////////////////////
-// 日本語 (日本) resources
+// ニュートラル (既定) resources
 
-#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_JPN)
-LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_NEUD)
+LANGUAGE LANG_NEUTRAL, SUBLANG_DEFAULT
 #pragma code_page(932)
-
-#ifdef APSTUDIO_INVOKED
-/////////////////////////////////////////////////////////////////////////////
-//
-// TEXTINCLUDE
-//
-
-1 TEXTINCLUDE 
-BEGIN
-    "resource.h\0"
-END
-
-2 TEXTINCLUDE 
-BEGIN
-    "#include ""winres.h""\r\n"
-    "\0"
-END
-
-3 TEXTINCLUDE 
-BEGIN
-    "\r\n"
-    "\0"
-END
-
-#endif    // APSTUDIO_INVOKED
-
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -63,7 +37,7 @@ BEGIN
     DEFPUSHBUTTON   "OK",IDOK,114,72,30,12
     PUSHBUTTON      "リセット",IDNO,6,72,36,12
     CONTROL         "映像品質:",IDC_STATIC,"Static",SS_SIMPLE | WS_GROUP,6,6,36,8
-    CONTROL         "音声ビットレート:",IDC_STATIC,"Static",SS_SIMPLE | WS_GROUP,6,24,54,8
+    CONTROL         "音声ビットレート (kbps):",IDC_STATIC,"Static",SS_SIMPLE | WS_GROUP,6,24,78,8
     CONTROL         "ハードウェア アクセラレーション",IDC_CHECK1,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,6,60,102,10
     COMBOBOX        IDC_COMBO1,108,24,36,18,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     EDITTEXT        IDC_EDIT1,108,6,36,12,ES_AUTOHSCROLL | ES_NUMBER,0,HIDC_EDIT1
@@ -123,6 +97,42 @@ BEGIN
 0x4548, 0x4356, "\000" 
     0
 END
+
+#endif    // ニュートラル (既定) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// 日本語 (日本) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_JPN)
+LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+#pragma code_page(932)
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""winres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
 
 #endif    // 日本語 (日本) resources
 /////////////////////////////////////////////////////////////////////////////
