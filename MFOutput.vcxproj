@@ -123,8 +123,6 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="logger2.h" />
-    <ClInclude Include="output2.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Rgb2NV12.h" />
   </ItemGroup>

@@ -13,8 +13,8 @@
 #include <Wmcodecdsp.h>
 #include "resource.h"
 #include "Rgb2NV12.h"
-#include "output2.h"
-#include "logger2.h"
+#include "aviutl2_sdk/output2.h"
+#include "aviutl2_sdk/logger2.h"
 
 #include <filesystem>
 #include <format>

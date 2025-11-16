@@ -19,11 +19,8 @@
 
 //----------------------------------------------------------------------------------
 
-#pragma once
-#include <windef.h>
 // 出力情報構造体
-struct OUTPUT_INFO
-{
+struct OUTPUT_INFO {
 	int flag;			//	フラグ
 	static constexpr int FLAG_VIDEO = 1; // 画像データあり
 	static constexpr int FLAG_AUDIO = 2; // 画像データあり
@@ -44,7 +41,7 @@ struct OUTPUT_INFO
 	// ※YC48は互換対応のフォーマットです
 	// 戻り値	: データへのポインタ
 	//			  画像データポインタの内容は次に外部関数を使うかメインに処理を戻すまで有効
-	void *(*func_get_video)(int frame, DWORD format);
+	void* (*func_get_video)(int frame, DWORD format);
 
 	// PCM形式の音声データへのポインタを取得します
 	// start	: 開始サンプル番号
@@ -54,7 +51,7 @@ struct OUTPUT_INFO
 	//			  1(WAVE_FORMAT_PCM) = PCM16bit / 3(WAVE_FORMAT_IEEE_FLOAT) = PCM(float)32bit
 	// 戻り値	: データへのポインタ
 	//			  音声データポインタの内容は次に外部関数を使うかメインに処理を戻すまで有効
-	void *(*func_get_audio)(int start, int length, int *readed, DWORD format);
+	void* (*func_get_audio)(int start, int length, int* readed, DWORD format);
 
 	// 中断するか調べます
 	// 戻り値	: TRUEなら中断
@@ -74,8 +71,7 @@ struct OUTPUT_INFO
 };
 
 // 出力プラグイン構造体
-struct OUTPUT_PLUGIN_TABLE
-{
+struct OUTPUT_PLUGIN_TABLE {
 	int flag;				// フラグ ※未使用
 	static constexpr int FLAG_VIDEO = 1; //	画像をサポートする
 	static constexpr int FLAG_AUDIO = 2; //	音声をサポートする
@@ -84,12 +80,12 @@ struct OUTPUT_PLUGIN_TABLE
 	LPCWSTR information;	// プラグインの情報
 
 	// 出力時に呼ばれる関数へのポインタ
-	bool (*func_output)(OUTPUT_INFO *oip);
+	bool (*func_output)(OUTPUT_INFO* oip);
 
 	// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 	bool (*func_config)(HWND hwnd, HINSTANCE dll_hinst);
 
 	// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 	// 戻り値	: 出力設定のテキスト情報(次に関数が呼ばれるまで内容を有効にしておく)
-	LPCWSTR(*func_get_config_text)();
+	LPCWSTR (*func_get_config_text)();
 };
