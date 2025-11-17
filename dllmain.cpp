@@ -145,11 +145,18 @@ auto const write_sample_to_sink_writer(IMFSinkWriter *const sink_writer, DWORD c
 	THROW_IF_FAILED(sink_writer->WriteSample(index, sample.get()));
 }
 
-[[nodiscard]] auto make_sink_writer(TCHAR const *const &output_name, bool const &is_accelerated)
+[[nodiscard]] auto make_sink_writer(TCHAR const *const &output_name, bool const &is_accelerated, GUID const &output_video_format)
 {
 	auto sink_writer_attributes{ wil::com_ptr<IMFAttributes>{} };
 	THROW_IF_FAILED(MFCreateAttributes(&sink_writer_attributes, 3));
 	THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, true));
+	if (output_video_format == MFVideoFormat_H264 || output_video_format == MFVideoFormat_HEVC)
+	{
+		// Fast-started MP4 requires FMPEG4, not MP4.
+		// https://stackoverflow.com/a/52444686
+		THROW_IF_FAILED(sink_writer_attributes->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_FMPEG4));
+		THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_MPEG4SINK_MOOV_BEFORE_MDAT, true));
+	}
 
 	if (is_accelerated)
 	{
@@ -205,7 +212,6 @@ auto const write_sample_to_sink_writer(IMFSinkWriter *const sink_writer, DWORD c
 	switch (output_video_format.Data1)
 	{
 	case FCC('H264'):
-		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MPEG4SINK_MOOV_BEFORE_MDAT, true));
 		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High));
 		break;
 	case FCC('HEVC'):
@@ -286,7 +292,7 @@ auto const configure_audio_input(IMFSinkWriter *const &sink_writer, DWORD const 
 
 std::tuple<wil::com_ptr<IMFSinkWriter>, DWORD, DWORD> initialize_sink_writer(OUTPUT_INFO const *const &oip, bool const &is_accelerated, GUID const &output_video_format, IMFMediaType *const &input_video_media_type, IMFMediaType *const &input_audio_media_type)
 {
-	auto const sink_writer{ make_sink_writer(oip->savefile, is_accelerated) };
+	auto const sink_writer{ make_sink_writer(oip->savefile, is_accelerated, get_suitable_output_video_format_guid(std::filesystem::path(oip->savefile).extension(), GetPrivateProfileInt(_T("mp4"), _T("videoFormat"), 0, CONFIG_INI_PATH))) };
 
 	auto const quality{ GetPrivateProfileInt(_T("mp4"), _T("videoQuality"), 70, CONFIG_INI_PATH)};
 	auto video_index{ configure_video_stream(oip, sink_writer.get(), output_video_format) };
@@ -392,8 +398,7 @@ auto func_output(OUTPUT_INFO *oip)
 	uint64_t time_stamp{};
 	THROW_IF_FAILED(MFFrameRateToAverageTimePerFrame(oip->rate, oip->scale, &time_stamp));
 
-	auto const path{ std::filesystem::path{ oip->savefile } };
-	auto const output_video_format{ get_suitable_output_video_format_guid(path.extension(), GetPrivateProfileInt(_T("mp4"), _T("videoFormat"), 0, CONFIG_INI_PATH))};
+	auto const output_video_format{ get_suitable_output_video_format_guid(std::filesystem::path(oip->savefile).extension(), GetPrivateProfileInt(_T("mp4"), _T("videoFormat"), 0, CONFIG_INI_PATH))};
 
 	auto const is_accelerated{ GetPrivateProfileInt(_T("general"), _T("useHardware"), BST_UNCHECKED, CONFIG_INI_PATH) == BST_CHECKED };
 
