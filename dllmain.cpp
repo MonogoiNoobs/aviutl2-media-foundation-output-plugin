@@ -5,10 +5,12 @@
 #include <windowsx.h>
 #include <tchar.h>
 #include <mfapi.h>
-#include <mfidl.h> // Do NOT remove this or Mfreadwrite.h will fail.
+#include <mfidl.h>
 #include <mfreadwrite.h>
 #include <wil/com.h>
 #include <D3D11.h>
+#include <D3D12.h>
+#include <mfd3d12.h>
 #include <codecapi.h>
 #include <Wmcodecdsp.h>
 #include "resource.h"
@@ -24,21 +26,13 @@
 #pragma comment(lib, "Mfreadwrite")
 #pragma comment(lib, "Mfuuid")
 #pragma comment(lib, "d3d11")
+#pragma comment(lib, "d3d12")
 
 auto const constinit AUDIO_BITS_PER_SAMPLE{ 16 };
 auto const constinit CONFIG_INI_PATH{ _T(R"(C:\ProgramData\aviutl2\Plugin\MFOutput.ini)") };
 
-D3D_FEATURE_LEVEL const constinit D3D_FEATURE_LEVELS[]{
-	D3D_FEATURE_LEVEL_11_1,
-	D3D_FEATURE_LEVEL_11_0,
-	D3D_FEATURE_LEVEL_10_1,
-	D3D_FEATURE_LEVEL_10_0,
-	D3D_FEATURE_LEVEL_9_3,
-	D3D_FEATURE_LEVEL_9_2,
-	D3D_FEATURE_LEVEL_9_1
-};
-
 LOG_HANDLE constinit *aviutl_logger{};
+bool constinit is_dx12_available{};
 
 auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noexcept
 {
@@ -106,6 +100,7 @@ auto const make_input_video_media_type(OUTPUT_INFO const *const &oip, bool const
 	//THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_DEFAULT_STRIDE, default_stride));
 	THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_SAMPLE_SIZE, image_size));
 	THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true));
+	THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_D3D_RESOURCE_VERSION, is_dx12_available ? MF_D3D12_RESOURCE : MF_D3D11_RESOURCE));
 	set_color_space_media_types(oip, input_video_media_type.get());
 	THROW_IF_FAILED(MFSetAttributeSize(input_video_media_type.get(), MF_MT_FRAME_SIZE, oip->w, oip->h));
 	THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_FRAME_RATE, oip->rate, oip->scale));
@@ -158,13 +153,31 @@ auto const write_sample_to_sink_writer(IMFSinkWriter *const sink_writer, DWORD c
 
 	if (is_accelerated)
 	{
-		auto d3d11_device{ wil::com_ptr<ID3D11Device>{} };
-		THROW_IF_FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D_FEATURE_LEVELS, _countof(D3D_FEATURE_LEVELS), D3D11_SDK_VERSION, &d3d11_device, nullptr, nullptr));
+		aviutl_logger->info(aviutl_logger, _T("Preparing DirectX..."));
+		auto directx_device{ wil::com_ptr<IUnknown>{} };
+		if (is_dx12_available)
+		{
+			aviutl_logger->info(aviutl_logger, _T("DirectX 12 is available so going to be used."));
+			THROW_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, __uuidof(ID3D12Device), directx_device.put_void()));
+		}
+		else
+		{
+			D3D_FEATURE_LEVEL const D3D_FEATURE_LEVELS[]{
+				D3D_FEATURE_LEVEL_11_1,
+				D3D_FEATURE_LEVEL_11_0,
+				D3D_FEATURE_LEVEL_10_1,
+				D3D_FEATURE_LEVEL_10_0,
+				D3D_FEATURE_LEVEL_9_3,
+				D3D_FEATURE_LEVEL_9_2,
+				D3D_FEATURE_LEVEL_9_1
+			};
+			THROW_IF_FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D_FEATURE_LEVELS, _countof(D3D_FEATURE_LEVELS), D3D11_SDK_VERSION, reinterpret_cast<ID3D11Device **>(directx_device.put()), nullptr, nullptr));
+		}
 
 		auto dxgi_device_manager{ wil::com_ptr<IMFDXGIDeviceManager>{} };
 		uint32_t reset_token{};
 		THROW_IF_FAILED(MFCreateDXGIDeviceManager(&reset_token, &dxgi_device_manager));
-		THROW_IF_FAILED(dxgi_device_manager->ResetDevice(d3d11_device.get(), reset_token));
+		THROW_IF_FAILED(dxgi_device_manager->ResetDevice(directx_device.get(), reset_token));
 
 		THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true));
 		THROW_IF_FAILED(sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, dxgi_device_manager.get()));
@@ -192,6 +205,7 @@ auto const write_sample_to_sink_writer(IMFSinkWriter *const sink_writer, DWORD c
 	switch (output_video_format.Data1)
 	{
 	case FCC('H264'):
+		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MPEG4SINK_MOOV_BEFORE_MDAT, true));
 		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High));
 		break;
 	case FCC('HEVC'):
@@ -489,12 +503,14 @@ auto func_config(HWND window, HINSTANCE instance)
 
 auto CALLBACK wil_log_callback(wil::FailureInfo const &failure) noexcept
 {
+	using enum wil::FailureType;
+
 	switch (failure.type)
 	{
-	case wil::FailureType::Exception:
+	case Exception:
 		aviutl_logger->error(aviutl_logger, std::format(L"{}. At line {}. ({})", failure.pszMessage, failure.uLineNumber, failure.hr).c_str());
 		break;
-	case wil::FailureType::Log:
+	case Log:
 		aviutl_logger->log(aviutl_logger, failure.pszMessage);
 		break;
 	}
@@ -504,6 +520,11 @@ extern "C" __declspec(dllexport) auto const InitializeLogger(LOG_HANDLE *logger)
 {
 	aviutl_logger = logger;
 	wil::SetResultLoggingCallback(wil_log_callback);
+}
+
+extern "C" __declspec(dllexport) auto const InitializePlugin(DWORD) noexcept
+{
+	is_dx12_available = SUCCEEDED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, __uuidof(ID3D12Device), nullptr));
 }
 
 //auto func_get_config_text()
