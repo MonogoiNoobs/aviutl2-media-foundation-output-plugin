@@ -14,7 +14,6 @@
 #include <codecapi.h>
 #include <Wmcodecdsp.h>
 #include "resource.h"
-#include "Rgb2NV12.h"
 #include "aviutl2_sdk/output2.h"
 #include "aviutl2_sdk/logger2.h"
 
@@ -28,11 +27,43 @@
 #pragma comment(lib, "d3d11")
 #pragma comment(lib, "d3d12")
 
+#pragma warning(push)
+#pragma warning(default: 4557 5266)
+
 auto const constinit AUDIO_BITS_PER_SAMPLE{ 16 };
 auto const constinit CONFIG_INI_PATH{ _T(R"(C:\ProgramData\aviutl2\Plugin\MFOutput.ini)") };
 
 LOG_HANDLE constinit *aviutl_logger{};
 bool constinit is_dx12_available{};
+
+auto yuy2_to_nv12(OUTPUT_INFO const *const &oip, uint8_t const yuy2[])
+{
+	__assume(oip->w % 2 == 0 && oip->h % 2 == 0);
+
+	auto output{ std::make_unique_for_overwrite<uint8_t[]>(oip->w * (static_cast<size_t>(oip->h / 2) + oip->h)) };
+
+	auto const stride{ oip->w * 2 };
+	auto const resolution{ static_cast<size_t>(oip->w * oip->h) };
+
+#pragma omp parallel
+	{
+#pragma omp for nowait
+		for (auto i{ 0 }; i < stride * oip->h; i += 2)
+			_mm256_store_si256
+			(
+				reinterpret_cast<__m256i *>(&output[i / 2]),
+				_mm256_load_si256(reinterpret_cast<__m256i const *>(&yuy2[i]))
+			);
+
+		for (size_t current_height{ 0 }; current_height < oip->h; current_height += 2)
+#pragma omp for nowait
+			for (auto i{ 0 }; i < stride; i += 4)
+				_mm256_store_si256(reinterpret_cast<__m256i *>( & output[resolution + (oip->w * current_height / 2) + 0]), _mm256_load_si256(reinterpret_cast<__m256i const *>(& yuy2[stride * current_height + i + 1]))),
+				_mm256_store_si256(reinterpret_cast<__m256i *>( & output[resolution + (oip->w * current_height / 2) + 1]), _mm256_load_si256(reinterpret_cast<__m256i const *>(& yuy2[stride * current_height + i + 3])));
+	}
+
+	return output;
+}
 
 auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noexcept
 {
@@ -44,21 +75,21 @@ auto constexpr get_suitable_input_video_format_guid(bool const &is_accelerated) 
 	return is_accelerated ? MFVideoFormat_NV12 : MFVideoFormat_YUY2;
 }
 
-auto const get_suitable_output_video_format_guid(std::filesystem::path const &extension, uint32_t const &preferred_mp4_format) noexcept
+auto get_suitable_output_video_format_guid(std::filesystem::path const &extension, uint32_t const &preferred_mp4_format) noexcept
 {
 	if (extension == _T(".mp4")) return preferred_mp4_format ? MFVideoFormat_HEVC : MFVideoFormat_H264;
 	if (extension == _T(".wmv")) return MFVideoFormat_WVC1;
 	return MFVideoFormat_H264;
 }
 
-auto const add_windows_media_qvba_activation_media_attributes(IMFAttributes *const &attributes, uint32_t const &quality)
+auto add_windows_media_qvba_activation_media_attributes(IMFAttributes *const &attributes, uint32_t const &quality)
 {
 	THROW_IF_FAILED(attributes->SetUINT32(MFPKEY_VBRENABLED.fmtid, true));
 	THROW_IF_FAILED(attributes->SetUINT32(MFPKEY_CONSTRAIN_ENUMERATED_VBRQUALITY.fmtid, true));
 	THROW_IF_FAILED(attributes->SetUINT32(MFPKEY_DESIRED_VBRQUALITY.fmtid, quality));
 }
 
-auto const set_color_space_media_types(OUTPUT_INFO const *const &oip, IMFMediaType *const &media_type)
+auto set_color_space_media_types(OUTPUT_INFO const *const &oip, IMFMediaType *const &media_type)
 {
 	THROW_IF_FAILED(media_type->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235));
 	if (oip->h <= 720)
@@ -84,7 +115,7 @@ auto const set_color_space_media_types(OUTPUT_INFO const *const &oip, IMFMediaTy
 	}
 }
 
-auto const make_input_video_media_type(OUTPUT_INFO const *const &oip, bool const &is_accelerated)
+auto make_input_video_media_type(OUTPUT_INFO const *const &oip, bool const &is_accelerated)
 {
 	uint32_t image_size{};
 	THROW_IF_FAILED(MFCalculateImageSize(get_suitable_input_video_format_guid(is_accelerated), oip->w, oip->h, &image_size));
@@ -108,7 +139,7 @@ auto const make_input_video_media_type(OUTPUT_INFO const *const &oip, bool const
 	return input_video_media_type;
 }
 
-auto const make_input_audio_media_type(OUTPUT_INFO const *const &oip, GUID const &output_video_format)
+auto make_input_audio_media_type(OUTPUT_INFO const *const &oip, GUID const &output_video_format)
 {
 	auto input_audio_media_type{ wil::com_ptr<IMFMediaType>{} };
 	THROW_IF_FAILED(MFCreateMediaType(&input_audio_media_type));
@@ -135,7 +166,7 @@ std::pair<wil::com_ptr<IMFMediaType>, wil::com_ptr<IMFMediaType>> const make_inp
 	return { make_input_video_media_type(oip, is_accelerated), make_input_audio_media_type(oip, output_video_format) };
 }
 
-auto const write_sample_to_sink_writer(IMFSinkWriter *const sink_writer, DWORD const &index, IMFMediaBuffer *const buffer, int64_t const &time, int64_t const &duration)
+auto write_sample_to_sink_writer(IMFSinkWriter *const sink_writer, DWORD const &index, IMFMediaBuffer *const buffer, int64_t const &time, int64_t const &duration)
 {
 	auto sample{ wil::com_ptr<IMFSample>{} };
 	THROW_IF_FAILED(MFCreateSample(&sample));
@@ -196,14 +227,13 @@ auto const write_sample_to_sink_writer(IMFSinkWriter *const sink_writer, DWORD c
 	return sink_writer;
 }
 
-[[nodiscard]] auto const configure_video_stream(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, GUID const &output_video_format)
+[[nodiscard]] auto configure_video_stream(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, GUID const &output_video_format)
 {
 	auto output_video_media_type{ wil::com_ptr<IMFMediaType>{} };
 	THROW_IF_FAILED(MFCreateMediaType(&output_video_media_type));
 
 	THROW_IF_FAILED(output_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
 	THROW_IF_FAILED(output_video_media_type->SetGUID(MF_MT_SUBTYPE, output_video_format));
-	THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_AVG_BITRATE, 12000000));
 	THROW_IF_FAILED(MFSetAttributeSize(output_video_media_type.get(), MF_MT_FRAME_SIZE, oip->w, oip->h));
 	THROW_IF_FAILED(MFSetAttributeRatio(output_video_media_type.get(), MF_MT_FRAME_RATE, oip->rate, oip->scale));
 	THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
@@ -219,6 +249,7 @@ auto const write_sample_to_sink_writer(IMFSinkWriter *const sink_writer, DWORD c
 		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_LEVEL, eAVEncH265VLevel5_1));
 		break;
 	default:
+		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_AVG_BITRATE, 12000000));
 		break;
 	}
 
@@ -248,7 +279,7 @@ auto const write_sample_to_sink_writer(IMFSinkWriter *const sink_writer, DWORD c
 	return audio_index;
 }
 
-auto const configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, DWORD const &video_index, uint32_t const &quality, bool const &is_accelerated, GUID const &output_video_format, IMFMediaType *const &input_video_media_type)
+auto configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, DWORD const &video_index, uint32_t const &quality, bool const &is_accelerated, GUID const &output_video_format, IMFMediaType *const &input_video_media_type)
 {
 	__assume(quality <= 100);
 
@@ -277,7 +308,7 @@ auto const configure_video_input(OUTPUT_INFO const *const &oip, IMFSinkWriter *c
 	THROW_IF_FAILED(sink_writer->SetInputMediaType(video_index, input_video_media_type, video_encoder_attributes.get()));
 }
 
-auto const configure_audio_input(IMFSinkWriter *const &sink_writer, DWORD const &audio_index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType *const &input_audio_media_type)
+auto configure_audio_input(IMFSinkWriter *const &sink_writer, DWORD const &audio_index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType *const &input_audio_media_type)
 {
 	auto audio_encoder_attributes{ wil::com_ptr<IMFAttributes>{} };
 
@@ -305,26 +336,13 @@ std::tuple<wil::com_ptr<IMFSinkWriter>, DWORD, DWORD> initialize_sink_writer(OUT
 	return { sink_writer, video_index, audio_index };
 }
 
-auto const write_video_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int32_t const &f, DWORD const &index, int64_t const &time_stamp, long const &default_stride, bool const &is_accelerated, IMFMediaType *const &input_media_type)
+auto write_video_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int32_t const &f, DWORD const &index, int64_t const &time_stamp, long const &default_stride, bool const &is_accelerated, IMFMediaType *const &input_media_type)
 {
 	if (oip->func_is_abort()) return false;
 
 	oip->func_rest_time_disp(f, oip->n);
-	
-	uint8_t *frame_image{};
 
-	if (is_accelerated)
-	{
-		auto frame_dib_pixels{ static_cast<uint8_t *>(oip->func_get_video(f, BI_RGB)) };
-		THROW_IF_NULL_ALLOC(frame_dib_pixels);
-		auto flipped{ new uint8_t[oip->w * oip->h * 3]{} };
-		Bgr2RgbAndReverseUpDown(frame_dib_pixels, oip->w, oip->h, flipped);
-		auto nv12{ new uint8_t[oip->w * oip->h * 3]{} };
-		Rgb2NV12_useSSE(flipped, oip->w, oip->h, nv12);
-		delete[] flipped;
-		frame_image = nv12;
-	}
-	else frame_image = static_cast<uint8_t *>(oip->func_get_video(f, FCC('YUY2')));
+	auto frame_image{ static_cast<uint8_t *>(oip->func_get_video(f, FCC('YUY2'))) };
 
 	auto video_buffer{ wil::com_ptr<IMFMediaBuffer>{} };
 	THROW_IF_FAILED(MFCreateMediaBufferFromMediaType(input_media_type, time_stamp, 0, 0, &video_buffer));
@@ -334,9 +352,8 @@ auto const write_video_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *cons
 	uint8_t *buffer_start{};
 	DWORD buffer_length{};
 	THROW_IF_FAILED(video_buffer.query<IMF2DBuffer2>()->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_start, &buffer_length));
-	THROW_IF_FAILED(MFCopyImage(scanline, stride, frame_image, default_stride, default_stride, oip->h));
+	THROW_IF_FAILED(MFCopyImage(scanline, stride, is_accelerated ? yuy2_to_nv12(oip, frame_image).get() : frame_image, default_stride, default_stride, oip->h));
 	THROW_IF_FAILED(video_buffer.query<IMF2DBuffer2>()->Unlock2D());
-	if (is_accelerated) delete[] frame_image, frame_image = nullptr;
 	// “Generally, you should avoid mixing calls to IMF2DBuffer and IMFMediaBuffer methods on the same media buffer.”
 	//     —Microsoft, in https://learn.microsoft.com/en-us/windows/win32/api/mfobjects/nn-mfobjects-imf2dbuffer
 	// 
@@ -350,7 +367,7 @@ auto const write_video_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *cons
 	return true;
 }
 
-auto const write_audio_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int32_t const &n, DWORD const &index, IMFMediaType *const &input_media_type)
+auto write_audio_sample(OUTPUT_INFO const *const &oip, IMFSinkWriter *const &sink_writer, int32_t const &n, DWORD const &index, IMFMediaType *const &input_media_type)
 {
 	if (oip->func_is_abort()) return false;
 
@@ -508,26 +525,30 @@ auto func_config(HWND window, HINSTANCE instance)
 
 auto CALLBACK wil_log_callback(wil::FailureInfo const &failure) noexcept
 {
-	using enum wil::FailureType;
-
 	switch (failure.type)
 	{
+	using enum wil::FailureType;
+
 	case Exception:
 		aviutl_logger->error(aviutl_logger, std::format(L"{}. At line {}. ({})", failure.pszMessage, failure.uLineNumber, failure.hr).c_str());
 		break;
 	case Log:
 		aviutl_logger->log(aviutl_logger, failure.pszMessage);
 		break;
+	case Return:
+	case FailFast:
+	default:
+		break;
 	}
 }
 
-extern "C" __declspec(dllexport) auto const InitializeLogger(LOG_HANDLE *logger) noexcept
+extern "C" __declspec(dllexport) auto InitializeLogger(LOG_HANDLE *logger) noexcept
 {
 	aviutl_logger = logger;
 	wil::SetResultLoggingCallback(wil_log_callback);
 }
 
-extern "C" __declspec(dllexport) auto const InitializePlugin(DWORD) noexcept
+extern "C" __declspec(dllexport) auto InitializePlugin(DWORD) noexcept
 {
 	is_dx12_available = SUCCEEDED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, __uuidof(ID3D12Device), nullptr));
 }
@@ -553,8 +574,10 @@ extern "C" __declspec(dllexport) auto constexpr GetOutputPluginTable() noexcept
 	return &output_plugin_table;
 }
 
-auto const APIENTRY DllMain(HMODULE handle, DWORD reason, void *reserved) noexcept
+auto APIENTRY DllMain(HMODULE handle, DWORD reason, void *reserved) noexcept
 {
 	wil::DLLMain(handle, reason, reserved);
 	return true;
 }
+
+#pragma warning(pop)
