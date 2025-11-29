@@ -67,7 +67,7 @@
       <AdditionalOptions>/utf-8 /Zc:__cplusplus /Zc:__STDC__ /Zc:enumTypes /Zc:externConstexpr /Zc:templateScope /Zc:throwingNew %(AdditionalOptions)</AdditionalOptions>
       <EnableModules>true</EnableModules>
       <BuildStlModules>false</BuildStlModules>
-      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
       <DisableSpecificWarnings>
       </DisableSpecificWarnings>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
@@ -106,7 +106,7 @@
       <AdditionalOptions>/utf-8 /Zc:__cplusplus /Zc:__STDC__ /Zc:enumTypes /Zc:externConstexpr /Zc:templateScope /Zc:throwingNew %(AdditionalOptions)</AdditionalOptions>
       <EnableModules>true</EnableModules>
       <BuildStlModules>false</BuildStlModules>
-      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
       <DisableSpecificWarnings>
       </DisableSpecificWarnings>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
@@ -131,6 +131,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="mfop.configure.ixx" />
+    <ClCompile Include="mfop.core.ixx" />
+    <ClCompile Include="mfop.ixx" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
