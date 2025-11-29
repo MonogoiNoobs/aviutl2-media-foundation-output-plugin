@@ -12,8 +12,8 @@ LOG_HANDLE constinit *aviutl_logger{};
 
 auto func_output(OUTPUT_INFO *oip)
 {
-	auto const video_quality{ std::any_cast<uint32_t>(mfop::configure::get(mfop::configure::keys::video_quality)) };
-	auto const audio_bit_rate{ std::any_cast<uint32_t>(mfop::configure::get(mfop::configure::keys::audio_bit_rate)) };
+	auto const video_quality{ std::any_cast<std::uint32_t>(mfop::configure::get(mfop::configure::keys::video_quality)) };
+	auto const audio_bit_rate{ std::any_cast<std::uint32_t>(mfop::configure::get(mfop::configure::keys::audio_bit_rate)) };
 	auto const is_hevc_preferred{ std::any_cast<bool>(mfop::configure::get(mfop::configure::keys::is_mp4_preferred_hevc)) };
 	auto const is_accelerated{ std::any_cast<bool>(mfop::configure::get(mfop::configure::keys::is_accelerated)) };
 
