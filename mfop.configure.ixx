@@ -24,9 +24,10 @@ export {
 		is_mp4_preferred_hevc,
 		is_accelerated
 	};
-	auto get(keys &&key);
-	auto set(keys &&key, int32_t &&value);
-	auto open_configuration_dialog(HWND window, HINSTANCE instance);
+	auto get(keys &&key) -> std::any;
+	auto set(keys &&key, int32_t &&value) -> void;
+	auto set(keys &&key, wchar_t const *value) -> void;
+	auto open_configuration_dialog(HWND window, HINSTANCE instance) -> void;
 }
 }
 }
@@ -51,7 +52,7 @@ enum defaults : int32_t
 	is_mp4_preferred_hevc = 0,
 	is_accelerated = BST_UNCHECKED
 };
-auto get(keys &&key)
+auto get(keys &&key) -> std::any
 {
 	std::any result{};
 
@@ -78,7 +79,7 @@ auto get(keys &&key)
 
 	return result;
 }
-auto set(keys &&key, int32_t &&value)
+auto set(keys &&key, int32_t &&value) -> void
 {
 	switch (key)
 	{
@@ -98,7 +99,7 @@ auto set(keys &&key, int32_t &&value)
 		break;
 	}
 }
-auto set(keys &&key, wchar_t const *value)
+auto set(keys &&key, wchar_t const *value) -> void
 {
 	switch (key)
 	{
@@ -176,7 +177,7 @@ intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, WPARAM w_par
 		return false;
 	}
 }
-auto open_configuration_dialog(HWND window, HINSTANCE instance)
+auto open_configuration_dialog(HWND window, HINSTANCE instance) -> void
 {
 	DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
 }
