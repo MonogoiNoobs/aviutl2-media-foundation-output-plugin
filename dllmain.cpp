@@ -1,6 +1,3 @@
-import std;
-import mfop;
-
 #define STRICT
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -8,16 +5,25 @@ import mfop;
 #include "aviutl2_sdk/output2.h"
 #include "aviutl2_sdk/logger2.h"
 
-LOG_HANDLE constinit *aviutl_logger{};
+import std;
+import mfop;
+
+static LOG_HANDLE *aviutl_logger;
 
 auto func_output(OUTPUT_INFO *oip)
 {
-	auto const video_quality{ std::any_cast<std::uint32_t>(mfop::configure::get(mfop::configure::keys::video_quality)) };
-	auto const audio_bit_rate{ std::any_cast<std::uint32_t>(mfop::configure::get(mfop::configure::keys::audio_bit_rate)) };
-	auto const is_hevc_preferred{ std::any_cast<bool>(mfop::configure::get(mfop::configure::keys::is_mp4_preferred_hevc)) };
-	auto const is_accelerated{ std::any_cast<bool>(mfop::configure::get(mfop::configure::keys::is_accelerated)) };
+	using std::any_cast;
+	using namespace mfop::configure;
 
-	mfop::output_file(oip, video_quality, audio_bit_rate, is_hevc_preferred, is_accelerated, aviutl_logger);
+	mfop::output_file
+	(
+		oip,
+		get<video_quality>(),
+		get<audio_bit_rate>(),
+		get<is_hevc_preferred>(),
+		get<is_accelerated>(),
+		aviutl_logger
+	);
 
 	return true;
 }
@@ -34,6 +40,7 @@ extern "C"
 	{
 		aviutl_logger = logger;
 	}
+
 	__declspec(dllexport) auto GetOutputPluginTable() noexcept
 	{
 		static auto constexpr output_plugin_table{ OUTPUT_PLUGIN_TABLE{
@@ -48,4 +55,3 @@ extern "C"
 		return &output_plugin_table;
 	}
 }
-
