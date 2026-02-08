@@ -20,6 +20,7 @@ namespace mfop
 	namespace configure
 	{
 		auto const constinit configuration_ini_path{ LR"(C:\ProgramData\aviutl2\Plugin\MFOutput.ini)" };
+
 		enum struct audio_bit_rates : int32_t
 		{
 			kbps_96,
@@ -28,30 +29,35 @@ namespace mfop
 			kbps_192
 		};
 
-		enum struct defaults : int32_t
+		template<typename Key>
+		int32_t consteval get_default()
 		{
-			video_quality = 70,
-			audio_bit_rate = audio_bit_rates::kbps_192,
-			is_hevc_preferred = 0,
-			is_accelerated = BST_UNCHECKED
-		};
+			if (is_same<Key, video_quality>::value)
+				return 70;
+			if (is_same<Key, audio_bit_rate>::value)
+				return to_underlying(audio_bit_rates::kbps_192);
+			if (is_same<Key, is_hevc_preferred>::value)
+				return FALSE;
+			if (is_same<Key, is_accelerated>::value)
+				return BST_UNCHECKED;
+		}
 
 		template<typename Key>
 		underlying_type<Key>::type get()
 		{
 			if (is_same<Key, video_quality>::value)
-				return GetPrivateProfileIntW(L"general", L"videoQuality", to_underlying(defaults::video_quality), configuration_ini_path);
+				return GetPrivateProfileIntW(L"general", L"videoQuality", get_default<Key>(), configuration_ini_path);
 			if (is_same<Key, audio_bit_rate>::value)
-				return GetPrivateProfileIntW(L"general", L"audioBitRate", to_underlying(defaults::audio_bit_rate), configuration_ini_path);
+				return GetPrivateProfileIntW(L"general", L"audioBitRate", get_default<Key>(), configuration_ini_path);
 			if (is_same<Key, is_hevc_preferred>::value)
-				return GetPrivateProfileIntW(L"mp4", L"videoFormat", to_underlying(defaults::is_hevc_preferred), configuration_ini_path) == 1;
+				return GetPrivateProfileIntW(L"mp4", L"videoFormat", get_default<Key>(), configuration_ini_path) == TRUE;
 			if (is_same<Key, is_accelerated>::value)
-				return GetPrivateProfileIntW(L"general", L"useHardware", to_underlying(defaults::is_accelerated), configuration_ini_path) == BST_CHECKED;
+				return GetPrivateProfileIntW(L"general", L"useHardware", get_default<Key>(), configuration_ini_path) == BST_CHECKED;
 			throw invalid_argument{ "Unknown key" };
 		}
 
 		template<typename Key>
-		void set(std::int32_t &&value)
+		void set(int32_t &&value)
 		{
 			if (is_same<Key, audio_bit_rate>::value)
 			{
@@ -117,10 +123,10 @@ namespace mfop
 				case IDNO:
 					if (MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO | MB_ICONWARNING) == IDYES)
 					{
-						ComboBox_SetCurSel(get_handle(IDC_COMBO2), defaults::is_hevc_preferred);
-						THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(to_underlying(defaults::video_quality)).c_str()));
-						ComboBox_SetCurSel(get_handle(IDC_COMBO1), defaults::audio_bit_rate);
-						Button_SetCheck(get_handle(IDC_CHECK1), defaults::is_accelerated);
+						ComboBox_SetCurSel(get_handle(IDC_COMBO2), get_default<is_hevc_preferred>());
+						THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).c_str()));
+						ComboBox_SetCurSel(get_handle(IDC_COMBO1), get_default<audio_bit_rate>());
+						Button_SetCheck(get_handle(IDC_CHECK1), get_default<is_accelerated>());
 					}
 					return false;
 				case IDOK:

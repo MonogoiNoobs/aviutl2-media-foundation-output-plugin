@@ -14,7 +14,7 @@ namespace mfop
 	namespace configure
 	{
 		export
-		{;
+		{
 			auto open_dialog(HWND window, HINSTANCE instance) -> void;
 
 			enum struct video_quality : std::uint32_t {};
