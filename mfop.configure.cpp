@@ -27,6 +27,7 @@ namespace mfop
 			kbps_160,
 			kbps_192
 		};
+
 		enum struct defaults : int32_t
 		{
 			video_quality = 70,
@@ -34,59 +35,59 @@ namespace mfop
 			is_hevc_preferred = 0,
 			is_accelerated = BST_UNCHECKED
 		};
+
 		template<typename Key>
-		std::underlying_type<Key>::type get()
+		underlying_type<Key>::type get()
 		{
-			if (std::is_same<Key, video_quality>::value)
+			if (is_same<Key, video_quality>::value)
 				return GetPrivateProfileIntW(L"general", L"videoQuality", to_underlying(defaults::video_quality), configuration_ini_path);
-			if (std::is_same<Key, audio_bit_rate>::value)
+			if (is_same<Key, audio_bit_rate>::value)
 				return GetPrivateProfileIntW(L"general", L"audioBitRate", to_underlying(defaults::audio_bit_rate), configuration_ini_path);
-			if (std::is_same<Key, is_hevc_preferred>::value)
+			if (is_same<Key, is_hevc_preferred>::value)
 				return GetPrivateProfileIntW(L"mp4", L"videoFormat", to_underlying(defaults::is_hevc_preferred), configuration_ini_path) == 1;
-			if (std::is_same<Key, is_accelerated>::value)
+			if (is_same<Key, is_accelerated>::value)
 				return GetPrivateProfileIntW(L"general", L"useHardware", to_underlying(defaults::is_accelerated), configuration_ini_path) == BST_CHECKED;
 			throw invalid_argument{ "Unknown key" };
 		}
-		auto set(keys &&key, int32_t &&value) -> void
-		{
-			switch (key)
-			{
-				using enum keys;
 
-			case audio_bit_rate:
+		template<typename Key>
+		void set(std::int32_t &&value)
+		{
+			if (is_same<Key, audio_bit_rate>::value)
+			{
 				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).c_str(), configuration_ini_path));
-				break;
-			case is_hevc_preferred:
-				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"mp4", L"videoFormat", to_wstring(value).c_str(), configuration_ini_path));
-				break;
-			case is_accelerated:
-				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"useHardware", value == BST_CHECKED ? L"1" : L"0", configuration_ini_path));
-				break;
-			default:
-				throw exception{ "Unknown key" };
-				break;
+				return;
 			}
-		}
-		auto set(keys &&key, wchar_t const *value) -> void
-		{
-			switch (key)
+			if (is_same<Key, is_hevc_preferred>::value)
 			{
-				using enum keys;
-
-			case video_quality:
-				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"videoQuality", value, configuration_ini_path));
-				break;
-			default:
-				throw exception{ "Unknown key" };
-				break;
+				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"mp4", L"videoFormat", to_wstring(value).c_str(), configuration_ini_path));
+				return;
 			}
+			if (is_same<Key, is_accelerated>::value)
+			{
+				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"useHardware", value == BST_CHECKED ? L"1" : L"0", configuration_ini_path));
+				return;
+			}
+			throw invalid_argument{ "Unknown key" };
 		}
+
+		template<typename Key>
+		void set(wchar_t const *const &&value)
+		{
+			if (is_same<Key, video_quality>::value)
+			{
+				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"videoQuality", value, configuration_ini_path));
+				return;
+			}
+			throw invalid_argument{ "Unknown key" };
+		}
+
 		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t w_param, intptr_t)
 		{
 			uint32_t quality{};
 			static wchar_t constinit quality_wchar{};
 
-			auto const get_handle{ [&dialog](int32_t &&id)
+			auto const get_handle{ [&dialog](int32_t &&id) noexcept
 			{
 				return GetDlgItem(dialog, id);
 			} };
@@ -130,13 +131,13 @@ namespace mfop
 						return false;
 					}
 
-					set(keys::is_hevc_preferred, ComboBox_GetCurSel(get_handle(IDC_COMBO2)));
+					set<is_hevc_preferred>(ComboBox_GetCurSel(get_handle(IDC_COMBO2)));
 
 					GetDlgItemTextW(dialog, IDC_EDIT1, &quality_wchar, 3);
-					set(keys::video_quality, &quality_wchar);
+					set<video_quality>(&quality_wchar);
 
-					set(keys::audio_bit_rate, ComboBox_GetCurSel(get_handle(IDC_COMBO1)));
-					set(keys::is_accelerated, Button_GetCheck(get_handle(IDC_CHECK1)));
+					set<audio_bit_rate>(ComboBox_GetCurSel(get_handle(IDC_COMBO1)));
+					set<is_accelerated>(Button_GetCheck(get_handle(IDC_CHECK1)));
 
 					THROW_IF_WIN32_BOOL_FALSE(EndDialog(dialog, IDOK));
 					return true;
@@ -150,7 +151,7 @@ namespace mfop
 				return false;
 			}
 		}
-		auto open_configuration_dialog(HWND window, HINSTANCE instance) -> void
+		auto open_dialog(HWND window, HINSTANCE instance) -> void
 		{
 			DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
 		}

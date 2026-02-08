@@ -12,7 +12,6 @@ static LOG_HANDLE *aviutl_logger;
 
 auto func_output(OUTPUT_INFO *oip)
 {
-	using std::any_cast;
 	using namespace mfop::configure;
 
 	mfop::output_file
@@ -30,7 +29,7 @@ auto func_output(OUTPUT_INFO *oip)
 
 auto func_config(HWND window, HINSTANCE instance)
 {
-	mfop::configure::open_configuration_dialog(window, instance);
+	mfop::configure::open_dialog(window, instance);
 	return true;
 }
 
