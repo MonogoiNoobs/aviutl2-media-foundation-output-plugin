@@ -30,7 +30,7 @@ namespace mfop
 
 			template<typename Key> std::underlying_type<Key>::type get();
 			template<typename Key> void set(std::int32_t &&value);
-			template<typename Key> void set(wchar_t &&value);
+			template<typename Key> void set(wchar_t const &value);
 		}
 	}
 }

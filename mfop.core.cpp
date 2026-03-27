@@ -248,7 +248,7 @@ namespace mfop
 		return dxgi_device_manager;
 	}
 
-	[[nodiscard]] auto make_sink_writer(wchar_t const *const &output_name, bool const &is_accelerated, GUID const &output_video_format)
+	[[nodiscard]] auto make_sink_writer(wstring_view output_name, bool const &is_accelerated, GUID const &output_video_format)
 	{
 		auto sink_writer_attributes{ com_ptr<IMFAttributes>{} };
 		THROW_IF_FAILED(MFCreateAttributes(out_ptr(sink_writer_attributes), 3));
@@ -270,7 +270,7 @@ namespace mfop
 		}
 
 		auto sink_writer{ com_ptr<IMFSinkWriter>{} };
-		THROW_IF_FAILED(MFCreateSinkWriterFromURL(output_name, nullptr, sink_writer_attributes.get(), out_ptr(sink_writer)));
+		THROW_IF_FAILED(MFCreateSinkWriterFromURL(output_name.data(), nullptr, sink_writer_attributes.get(), out_ptr(sink_writer)));
 
 		return sink_writer;
 	}
@@ -509,7 +509,7 @@ namespace mfop
 		return unique_mfshutdown_call();
 	}
 
-	void output_file(OUTPUT_INFO const& oip, std::uint32_t const& video_quality, std::uint32_t const& audio_bit_rate, bool const& is_hevc_preferred, bool const& is_accelerated, LOG_HANDLE& logger)
+	void output_file(OUTPUT_INFO const &oip, std::uint32_t const &video_quality, std::uint32_t const &audio_bit_rate, bool const &is_hevc_preferred, bool const &is_accelerated, LOG_HANDLE &logger)
 	{
 		auto const com_cleanup{ CoInitializeEx() };
 		auto const mf_cleanup{ MFStartup() };

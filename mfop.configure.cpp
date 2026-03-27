@@ -46,6 +46,7 @@ namespace mfop
 				return FALSE;
 			if (is_same<Key, is_accelerated>::value)
 				return BST_UNCHECKED;
+			throw invalid_argument{ "Unknown key" };
 		}
 
 		template<typename Key>
