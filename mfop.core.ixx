@@ -18,12 +18,12 @@ namespace mfop
 	{
 		void output_file
 		(
-			OUTPUT_INFO const *const &oip,
+			OUTPUT_INFO const &oip,
 			std::uint32_t const &video_quality,
-			std::uint32_t const audio_bit_rate,
+			std::uint32_t const &audio_bit_rate,
 			bool const &is_hevc_preferred,
 			bool const &is_accelerated,
-			LOG_HANDLE *logger = nullptr
+			LOG_HANDLE &logger
 		); 
 	}
 }

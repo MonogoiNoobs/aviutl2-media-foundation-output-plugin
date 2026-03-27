@@ -1,3 +1,8 @@
+<#
+	SPDX-License-Identifier: MIT
+	Copyright (c) 2025-2026 Shion Yorigami <62567343+MonogoiNoobs@users.noreply.github.com>
+#>
+
 If (Test-Path aviutl2_sdk)
 {
 	Remove-Item aviutl2_sdk -Recurse

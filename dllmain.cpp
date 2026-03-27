@@ -1,3 +1,9 @@
+/**
+ * \copyright	SPDX-License-Identifier: MIT
+ * \year		2025-2026
+ * \author		Shion Yorigami <62567343+MonogoiNoobs@users.noreply.github.com>
+ */
+
 #define STRICT
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -16,12 +22,12 @@ auto func_output(OUTPUT_INFO *oip)
 
 	mfop::output_file
 	(
-		oip,
+		*oip,
 		get<video_quality>(),
 		get<audio_bit_rate>(),
 		get<is_hevc_preferred>(),
 		get<is_accelerated>(),
-		aviutl_logger
+		*aviutl_logger
 	);
 
 	return true;

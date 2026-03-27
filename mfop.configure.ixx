@@ -1,3 +1,9 @@
+/**
+ * \copyright	SPDX-License-Identifier: MIT
+ * \year		2025-2026
+ * \author		Shion Yorigami <62567343+MonogoiNoobs@users.noreply.github.com>
+ */
+
 module;
 
 #define STRICT
@@ -24,7 +30,7 @@ namespace mfop
 
 			template<typename Key> std::underlying_type<Key>::type get();
 			template<typename Key> void set(std::int32_t &&value);
-			template<typename Key> void set(wchar_t const *const &&value);
+			template<typename Key> void set(wchar_t &&value);
 		}
 	}
 }

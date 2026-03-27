@@ -1,3 +1,9 @@
+/**
+ * \copyright	SPDX-License-Identifier: MIT
+ * \year		2025-2026
+ * \author		Shion Yorigami <62567343+MonogoiNoobs@users.noreply.github.com>
+ */
+
 module;
 
 #define STRICT
@@ -78,11 +84,11 @@ namespace mfop
 		}
 
 		template<typename Key>
-		void set(wchar_t const *const &&value)
+		void set(wchar_t const &value)
 		{
 			if (is_same<Key, video_quality>::value)
 			{
-				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"videoQuality", value, configuration_ini_path));
+				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"videoQuality", &value, configuration_ini_path));
 				return;
 			}
 			throw invalid_argument{ "Unknown key" };
@@ -140,7 +146,7 @@ namespace mfop
 					set<is_hevc_preferred>(ComboBox_GetCurSel(get_handle(IDC_COMBO2)));
 
 					GetDlgItemTextW(dialog, IDC_EDIT1, &quality_wchar, 3);
-					set<video_quality>(&quality_wchar);
+					set<video_quality>(quality_wchar);
 
 					set<audio_bit_rate>(ComboBox_GetCurSel(get_handle(IDC_COMBO1)));
 					set<is_accelerated>(Button_GetCheck(get_handle(IDC_CHECK1)));
