@@ -25,7 +25,7 @@ auto func_output(OUTPUT_INFO *oip)
 		*oip,
 		get<video_quality>(),
 		get<audio_bit_rate>(),
-		get<is_hevc_preferred>(),
+		get<is_hevc_preferable>(),
 		get<is_accelerated>(),
 		*aviutl_logger
 	);

@@ -21,11 +21,11 @@ namespace mfop
 	{
 		export
 		{
-			auto open_dialog(HWND window, HINSTANCE instance) -> void;
+			auto open_dialog(HWND &window, HINSTANCE &instance) -> void;
 
 			enum struct video_quality : std::uint32_t {};
 			enum struct audio_bit_rate : std::uint32_t {};
-			enum struct is_hevc_preferred : bool {};
+			enum struct is_hevc_preferable : bool {};
 			enum struct is_accelerated : bool {};
 
 			template<typename Key> std::underlying_type<Key>::type get();

@@ -19,10 +19,10 @@ namespace mfop
 		void output_file
 		(
 			OUTPUT_INFO const &oip,
-			std::uint32_t const &video_quality,
-			std::uint32_t const &audio_bit_rate,
-			bool const &is_hevc_preferred,
-			bool const &is_accelerated,
+			std::uint32_t &&video_quality,
+			std::uint32_t &&audio_bit_rate,
+			bool &&is_hevc_preferable,
+			bool &&is_accelerated,
 			LOG_HANDLE &logger
 		); 
 	}

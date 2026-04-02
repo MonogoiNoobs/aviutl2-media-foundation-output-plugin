@@ -42,7 +42,7 @@ namespace mfop
 				return 70;
 			if (is_same<Key, audio_bit_rate>::value)
 				return to_underlying(audio_bit_rates::kbps_192);
-			if (is_same<Key, is_hevc_preferred>::value)
+			if (is_same<Key, is_hevc_preferable>::value)
 				return FALSE;
 			if (is_same<Key, is_accelerated>::value)
 				return BST_UNCHECKED;
@@ -56,7 +56,7 @@ namespace mfop
 				return GetPrivateProfileIntW(L"general", L"videoQuality", get_default<Key>(), configuration_ini_path);
 			if (is_same<Key, audio_bit_rate>::value)
 				return GetPrivateProfileIntW(L"general", L"audioBitRate", get_default<Key>(), configuration_ini_path);
-			if (is_same<Key, is_hevc_preferred>::value)
+			if (is_same<Key, is_hevc_preferable>::value)
 				return GetPrivateProfileIntW(L"mp4", L"videoFormat", get_default<Key>(), configuration_ini_path) == TRUE;
 			if (is_same<Key, is_accelerated>::value)
 				return GetPrivateProfileIntW(L"general", L"useHardware", get_default<Key>(), configuration_ini_path) == BST_CHECKED;
@@ -71,7 +71,7 @@ namespace mfop
 				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).c_str(), configuration_ini_path));
 				return;
 			}
-			if (is_same<Key, is_hevc_preferred>::value)
+			if (is_same<Key, is_hevc_preferable>::value)
 			{
 				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"mp4", L"videoFormat", to_wstring(value).c_str(), configuration_ini_path));
 				return;
@@ -116,7 +116,7 @@ namespace mfop
 				ComboBox_AddString(get_handle(IDC_COMBO1), L"160");
 				ComboBox_AddString(get_handle(IDC_COMBO1), L"192");
 
-				ComboBox_SetCurSel(get_handle(IDC_COMBO2), get<is_hevc_preferred>());
+				ComboBox_SetCurSel(get_handle(IDC_COMBO2), get<is_hevc_preferable>());
 
 				THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get<video_quality>()).c_str()));
 				ComboBox_SetCurSel(get_handle(IDC_COMBO1), get<audio_bit_rate>());
@@ -130,7 +130,7 @@ namespace mfop
 				case IDNO:
 					if (MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO | MB_ICONWARNING) == IDYES)
 					{
-						ComboBox_SetCurSel(get_handle(IDC_COMBO2), get_default<is_hevc_preferred>());
+						ComboBox_SetCurSel(get_handle(IDC_COMBO2), get_default<is_hevc_preferable>());
 						THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).c_str()));
 						ComboBox_SetCurSel(get_handle(IDC_COMBO1), get_default<audio_bit_rate>());
 						Button_SetCheck(get_handle(IDC_CHECK1), get_default<is_accelerated>());
@@ -144,7 +144,7 @@ namespace mfop
 						return false;
 					}
 
-					set<is_hevc_preferred>(ComboBox_GetCurSel(get_handle(IDC_COMBO2)));
+					set<is_hevc_preferable>(ComboBox_GetCurSel(get_handle(IDC_COMBO2)));
 
 					GetDlgItemTextW(dialog, IDC_EDIT1, &quality_wchar, 3);
 					set<video_quality>(quality_wchar);
@@ -164,7 +164,7 @@ namespace mfop
 				return false;
 			}
 		}
-		auto open_dialog(HWND window, HINSTANCE instance) -> void
+		auto open_dialog(HWND &window, HINSTANCE &instance) -> void
 		{
 			DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
 		}
