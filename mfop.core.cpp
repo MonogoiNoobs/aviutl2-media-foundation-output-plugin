@@ -430,7 +430,7 @@ namespace mfop
 
 		THROW_IF_FAILED(sink_writer->BeginWriting());
 
-		return sink_writer_with_indices_t{ sink_writer, indices };
+		return sink_writer_with_indices_t{ move(sink_writer), move(indices) };
 	}
 
 	auto write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type) noexcept
@@ -498,11 +498,11 @@ namespace mfop
 		return S_OK;
 	}
 
-	auto write_samples(OUTPUT_INFO const &oip, sink_writer_with_indices_t &&sink_writer_with_indices, IMFMediaTypes const &input_media_types)
+	auto write_samples(OUTPUT_INFO const &oip, GUID const &output_video_format, uint32_t const &video_quality, uint32_t const &audio_bit_rate, IMFMediaTypes const &input_media_types)
 	{
 		auto is_aborted{ true };
 
-		auto const [sink_writer, indices] { sink_writer_with_indices };
+		auto const [sink_writer, indices] { make_initialized_sink_writer(oip, output_video_format, video_quality, audio_bit_rate, input_media_types) };
 		auto const [video_index, audio_index] { indices };
 		auto const [input_video_media_type, input_audio_media_type] { input_media_types };
 
@@ -545,7 +545,9 @@ namespace mfop
 		write_samples
 		(
 			oip,
-			make_initialized_sink_writer(oip, output_video_format, video_quality, audio_bit_rate, input_media_types),
+			output_video_format,
+			video_quality,
+			audio_bit_rate,
 			input_media_types
 		);
 	}

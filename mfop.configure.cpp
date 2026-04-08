@@ -42,10 +42,12 @@ namespace mfop
 				return 70;
 			if (is_same<Key, audio_bit_rate>::value)
 				return to_underlying(audio_bit_rates::kbps_192);
-			if (is_same<Key, is_hevc_preferable>::value)
-				return FALSE;
 			if (is_same<Key, is_accelerated>::value)
 				return BST_UNCHECKED;
+
+			if (is_same<Key, is_hevc_preferable>::value)
+				return FALSE;
+
 			throw invalid_argument{ "Unknown key" };
 		}
 
@@ -56,48 +58,33 @@ namespace mfop
 				return GetPrivateProfileIntW(L"general", L"videoQuality", get_default<Key>(), configuration_ini_path);
 			if (is_same<Key, audio_bit_rate>::value)
 				return GetPrivateProfileIntW(L"general", L"audioBitRate", get_default<Key>(), configuration_ini_path);
-			if (is_same<Key, is_hevc_preferable>::value)
-				return GetPrivateProfileIntW(L"mp4", L"videoFormat", get_default<Key>(), configuration_ini_path) == TRUE;
 			if (is_same<Key, is_accelerated>::value)
 				return GetPrivateProfileIntW(L"general", L"useHardware", get_default<Key>(), configuration_ini_path) == BST_CHECKED;
+
+			if (is_same<Key, is_hevc_preferable>::value)
+				return GetPrivateProfileIntW(L"mp4", L"videoFormat", get_default<Key>(), configuration_ini_path) == TRUE;
+
 			throw invalid_argument{ "Unknown key" };
 		}
 
 		template<typename Key>
-		void set(int32_t &&value)
+		bool set(int32_t &&value) noexcept
 		{
 			if (is_same<Key, audio_bit_rate>::value)
-			{
-				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).c_str(), configuration_ini_path));
-				return;
-			}
-			if (is_same<Key, is_hevc_preferable>::value)
-			{
-				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"mp4", L"videoFormat", to_wstring(value).c_str(), configuration_ini_path));
-				return;
-			}
-			if (is_same<Key, is_accelerated>::value)
-			{
-				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"useHardware", value == BST_CHECKED ? L"1" : L"0", configuration_ini_path));
-				return;
-			}
-			throw invalid_argument{ "Unknown key" };
-		}
-
-		template<typename Key>
-		void set(wchar_t const &value)
-		{
+				return WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).c_str(), configuration_ini_path);
 			if (is_same<Key, video_quality>::value)
-			{
-				THROW_IF_WIN32_BOOL_FALSE(WritePrivateProfileStringW(L"general", L"videoQuality", &value, configuration_ini_path));
-				return;
-			}
-			throw invalid_argument{ "Unknown key" };
+				return WritePrivateProfileStringW(L"general", L"videoQuality", to_wstring(value).c_str(), configuration_ini_path);
+			if (is_same<Key, is_accelerated>::value)
+				return WritePrivateProfileStringW(L"general", L"useHardware", value == BST_CHECKED ? L"1" : L"0", configuration_ini_path);
+
+			if (is_same<Key, is_hevc_preferable>::value)
+				return WritePrivateProfileStringW(L"mp4", L"videoFormat", to_wstring(value).c_str(), configuration_ini_path);
+
+			return false;
 		}
 
 		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t w_param, intptr_t)
 		{
-			uint32_t quality{};
 			static wchar_t constinit quality_wchar{};
 
 			auto const get_handle{ [&dialog](int32_t &&id) noexcept
@@ -137,17 +124,9 @@ namespace mfop
 					}
 					return false;
 				case IDOK:
-					quality = GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false);
-					if (quality > 100 || quality == 0)
-					{
-						MessageBoxW(dialog, L"映像品質は1〜100の範囲で指定してください。", nullptr, MB_OK | MB_ICONERROR);
-						return false;
-					}
-
 					set<is_hevc_preferable>(ComboBox_GetCurSel(get_handle(IDC_COMBO2)));
 
-					GetDlgItemTextW(dialog, IDC_EDIT1, &quality_wchar, 3);
-					set<video_quality>(quality_wchar);
+					set<video_quality>(std::min(100u, std::max(1u, GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false))));
 
 					set<audio_bit_rate>(ComboBox_GetCurSel(get_handle(IDC_COMBO1)));
 					set<is_accelerated>(Button_GetCheck(get_handle(IDC_CHECK1)));

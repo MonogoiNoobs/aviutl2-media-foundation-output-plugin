@@ -29,8 +29,7 @@ namespace mfop
 			enum struct is_accelerated : bool {};
 
 			template<typename Key> std::underlying_type<Key>::type get();
-			template<typename Key> void set(std::int32_t &&value);
-			template<typename Key> void set(wchar_t const &value);
+			template<typename Key> bool set(std::int32_t &&value) noexcept;
 		}
 	}
 }
