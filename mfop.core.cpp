@@ -28,6 +28,11 @@ module;
 
 #pragma warning(default: 4557 5266)
 
+#define UNEXPECT_IF_FAILED(hr) do { \
+	HRESULT const __mfop_cond{ hr }; \
+	if (FAILED(__mfop_cond)) return std::unexpected{ mfop_cond }; \
+} while (0)
+
 module mfop.core;
 
 import std;
@@ -56,6 +61,7 @@ namespace mfop
 	using stream_indices_t = pair<DWORD const, DWORD const>;
 	using IMFMediaTypes = pair<com_ptr<IMFMediaType>, com_ptr<IMFMediaType>>;
 	using sink_writer_with_indices_t = pair<com_ptr<IMFSinkWriter>, stream_indices_t const>;
+	template<typename Expected> using expected_win32 = expected<Expected, HRESULT>;
 
 	auto yuy2_to_nv12(span<uint8_t> yuy2, resolution_t &&resolution)
 	{
@@ -88,9 +94,10 @@ namespace mfop
 		return output;
 	}
 
-	auto is_dx12_available() noexcept
+	template<typename D3D12DeviceVersion = ID3D12Device>
+	auto is_dx12_available(D3D_FEATURE_LEVEL &&minimum_feature_level = D3D_FEATURE_LEVEL_11_1) noexcept
 	{
-		return SUCCEEDED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, __uuidof(ID3D12Device), nullptr));
+		return SUCCEEDED(D3D12CreateDevice(nullptr, minimum_feature_level, __uuidof(D3D12DeviceVersion), nullptr));
 	}
 
 	auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noexcept
@@ -175,10 +182,11 @@ namespace mfop
 		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_SAMPLE_SIZE, image_size));
 		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true));
 		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_FIXED_SIZE_SAMPLES, true));
-		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_D3D_RESOURCE_VERSION, is_dx12_available() ? MF_D3D12_RESOURCE : MF_D3D11_RESOURCE));
 		THROW_IF_FAILED(MFSetAttributeSize(input_video_media_type.get(), MF_MT_FRAME_SIZE, width, height));
 		THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_FRAME_RATE, rate, scale));
 		THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
+
+		if (is_accelerated) THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_D3D_RESOURCE_VERSION, is_dx12_available() ? MF_D3D12_RESOURCE : MF_D3D11_RESOURCE));
 
 		return input_video_media_type;
 	}
@@ -213,27 +221,28 @@ namespace mfop
 		};
 	}
 
-	auto write_sample_to_sink_writer(IMFSinkWriter &sink_writer, DWORD const &index, IMFMediaBuffer &buffer, int64_t const &time, int64_t const &duration)
+	auto write_sample_to_sink_writer(IMFSinkWriter &sink_writer, DWORD const &index, IMFMediaBuffer &buffer, int64_t const &time, int64_t const &duration) noexcept
 	{
-		auto sample{ com_ptr<IMFSample>{} };
-		THROW_IF_FAILED(MFCreateSample(out_ptr(sample)));
-		THROW_IF_FAILED(sample->AddBuffer(&buffer));
-		THROW_IF_FAILED(sample->SetSampleTime(time));
-		THROW_IF_FAILED(sample->SetSampleDuration(duration));
-		THROW_IF_FAILED(sink_writer.WriteSample(index, sample.get()));
+		auto sample{ com_ptr_nothrow<IMFSample>{} };
+		RETURN_IF_FAILED(MFCreateSample(out_ptr(sample)));
+		RETURN_IF_FAILED(sample->AddBuffer(&buffer));
+		RETURN_IF_FAILED(sample->SetSampleTime(time));
+		RETURN_IF_FAILED(sample->SetSampleDuration(duration));
+		RETURN_IF_FAILED(sink_writer.WriteSample(index, sample.get()));
+
+		return S_OK;
 	}
 
-	auto make_dxgi_device_manager_ptr(bool const &will_dx12_use = false)
+	auto make_dxgi_device_manager_ptr(uint32_t const &d3d_resource_version = MF_D3D11_RESOURCE)
 	{
 		aviutl_logger->info(aviutl_logger, L"Preparing DirectX Video Acceleration...");
-		auto directx_device{ com_ptr<IUnknown>{} };
-		if (will_dx12_use)
+		com_ptr<IUnknown> directx_device{};
+		switch (d3d_resource_version)
 		{
-			aviutl_logger->info(aviutl_logger, L"DirectX 12 is available so going to be used.");
-			THROW_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, __uuidof(ID3D12Device2), out_ptr(directx_device)));
-		}
-		else
-			THROW_IF_FAILED(D3D11CreateDevice(
+		default:
+		case MF_D3D11_RESOURCE:
+			THROW_IF_FAILED(D3D11CreateDevice
+			(
 				nullptr,
 				D3D_DRIVER_TYPE_HARDWARE,
 				nullptr,
@@ -241,11 +250,18 @@ namespace mfop
 				d3d_feature_levels.data(),
 				static_cast<uint32_t>(d3d_feature_levels.size()),
 				D3D11_SDK_VERSION,
-				reinterpret_cast<ID3D11Device **>(directx_device.put()),
+				reinterpret_cast<ID3D11Device **>(&directx_device),
 				nullptr,
 				nullptr
 			));
-		auto dxgi_device_manager{ com_ptr<IMFDXGIDeviceManager>{} };
+			break;
+
+		case MF_D3D12_RESOURCE:
+			aviutl_logger->info(aviutl_logger, L"DirectX 12 is available so going to be used.");
+			THROW_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, __uuidof(ID3D12Device), out_ptr(directx_device)));
+			break;
+		}
+		com_ptr<IMFDXGIDeviceManager> dxgi_device_manager{};
 		uint32_t reset_token{};
 		THROW_IF_FAILED(MFCreateDXGIDeviceManager(&reset_token, out_ptr(dxgi_device_manager)));
 		THROW_IF_FAILED(dxgi_device_manager->ResetDevice(directx_device.get(), reset_token));
@@ -253,7 +269,7 @@ namespace mfop
 		return dxgi_device_manager;
 	}
 
-	[[nodiscard]] auto make_sink_writer(wstring_view output_name, bool const &is_accelerated, GUID const &output_video_format)
+	[[nodiscard]] auto make_sink_writer(wstring_view output_name, IMFAttributes &media_type, GUID const &output_video_format)
 	{
 		auto sink_writer_attributes{ com_ptr<IMFAttributes>{} };
 		THROW_IF_FAILED(MFCreateAttributes(out_ptr(sink_writer_attributes), 3));
@@ -266,10 +282,18 @@ namespace mfop
 			THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_MPEG4SINK_MOOV_BEFORE_MDAT, true));
 		}
 
-		if (is_accelerated)
+		uint32_t d3d_resource_version{};
+		if (SUCCEEDED(media_type.GetUINT32(MF_MT_D3D_RESOURCE_VERSION, &d3d_resource_version)))
 		{
-			THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true));
-			THROW_IF_FAILED(sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, make_dxgi_device_manager_ptr(is_dx12_available()).get()));
+			try
+			{
+				THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true));
+				THROW_IF_FAILED(sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, make_dxgi_device_manager_ptr(d3d_resource_version).get()));
+			}
+			catch (HRESULT const &)
+			{
+				aviutl_logger->warn(aviutl_logger, L"Failed to initialize hardware acceleration. Falling back to software encoding.");
+			}
 		}
 
 		auto sink_writer{ com_ptr<IMFSinkWriter>{} };
@@ -399,9 +423,9 @@ namespace mfop
 		};
 	}
 
-	auto make_initialized_sink_writer(OUTPUT_INFO const &oip, bool const &is_accelerated, GUID const &output_video_format, uint32_t const &video_quality, uint32_t const &audio_bit_rate, IMFMediaTypes const &media_types)
+	auto make_initialized_sink_writer(OUTPUT_INFO const &oip, GUID const &output_video_format, uint32_t const &video_quality, uint32_t const &audio_bit_rate, IMFMediaTypes const &media_types)
 	{
-		auto const sink_writer{ make_sink_writer(oip.savefile, is_accelerated, output_video_format) };
+		auto const sink_writer{ make_sink_writer(oip.savefile, *media_types.first, output_video_format) };
 		auto const indices{ configure_streams(*sink_writer, video_quality, audio_bit_rate, media_types, output_video_format) };
 
 		THROW_IF_FAILED(sink_writer->BeginWriting());
@@ -409,67 +433,72 @@ namespace mfop
 		return sink_writer_with_indices_t{ sink_writer, indices };
 	}
 
-	auto write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type, bool const &is_accelerated)
+	auto write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type) noexcept
 	{
-		static uint64_t const time_stamp{ convert_frame_rate_to_average_time_per_frame(input_media_type) };
+		static uint32_t d3d_resource_version{};
+		static auto const is_accelerated{ SUCCEEDED(input_media_type.GetUINT32(MF_MT_D3D_RESOURCE_VERSION, &d3d_resource_version)) };
+		static auto const time_stamp{ convert_frame_rate_to_average_time_per_frame(input_media_type) };
 
-		if (oip.func_is_abort()) return false;
+		if (oip.func_is_abort()) return E_ABORT;
 
 		oip.func_rest_time_disp(f, oip.n);
 
 		auto const frame_image{ static_cast<uint8_t *>(oip.func_get_video(f, FCC('YUY2'))) };
 
-		auto video_buffer{ com_ptr<IMFMediaBuffer>{} };
-		THROW_IF_FAILED(MFCreateMediaBufferFromMediaType(&input_media_type, time_stamp, 0, 0, out_ptr(video_buffer)));
+		auto video_buffer{ com_ptr_nothrow<IMFMediaBuffer>{} };
+		RETURN_IF_FAILED(MFCreateMediaBufferFromMediaType(&input_media_type, time_stamp, 0, 0, out_ptr(video_buffer)));
+
+		com_ptr_nothrow<IMF2DBuffer2> video_2d_buffer{};
+		RETURN_IF_FAILED(video_buffer.query_to(&video_2d_buffer));
 
 		uint8_t *scanline{};
 		long stride{};
 		uint8_t *buffer_begin{};
 		DWORD buffer_size{};
-		THROW_IF_FAILED(video_buffer.query<IMF2DBuffer2>()->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_begin, &buffer_size));
-		THROW_IF_FAILED(MFCopyImage(scanline, stride, is_accelerated ? yuy2_to_nv12(span{ frame_image, buffer_size }, { oip.w, oip.h }).get() : frame_image, stride, stride, oip.h));
-		THROW_IF_FAILED(video_buffer.query<IMF2DBuffer2>()->Unlock2D());
+		RETURN_IF_FAILED(video_2d_buffer->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_begin, &buffer_size));
+		RETURN_IF_FAILED(MFCopyImage(scanline, stride, is_accelerated ? yuy2_to_nv12(span{ frame_image, buffer_size }, { oip.w, oip.h }).get() : frame_image, stride, stride, oip.h));
+		RETURN_IF_FAILED(video_2d_buffer->Unlock2D());
 
 		DWORD contiguous_length{};
-		THROW_IF_FAILED(video_buffer.query<IMF2DBuffer2>()->GetContiguousLength(&contiguous_length));
-		THROW_IF_FAILED(video_buffer->SetCurrentLength(contiguous_length));
+		RETURN_IF_FAILED(video_2d_buffer->GetContiguousLength(&contiguous_length));
+		RETURN_IF_FAILED(video_buffer->SetCurrentLength(contiguous_length));
 
-		write_sample_to_sink_writer(sink_writer, index, *video_buffer, time_stamp * f, time_stamp);
+		RETURN_IF_FAILED(write_sample_to_sink_writer(sink_writer, index, *video_buffer, time_stamp * f, time_stamp));
 
-		return true;
+		return S_OK;
 	}
 
-	auto write_audio_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &n, DWORD const &index, IMFMediaType &input_media_type)
+	auto write_audio_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &n, DWORD const &index, IMFMediaType &input_media_type) noexcept
 	{
-		static auto const block_alignment{ get_pcm_block_alignment(static_cast<uint32_t>(oip.audio_ch), audio_bits_per_sample) }; // bytes per audio-frame
-		static auto const max_samples{ static_cast<int32_t>(block_alignment * oip.audio_rate) }; // bytes per second
+		static auto const block_alignment{ get_pcm_block_alignment(static_cast<uint32_t>(oip.audio_ch), audio_bits_per_sample) };
+		static auto const max_samples{ static_cast<int32_t>(block_alignment * oip.audio_rate) };
 
-		if (oip.func_is_abort()) return false;
+		if (oip.func_is_abort()) return E_ABORT;
 
 		oip.func_rest_time_disp(n, oip.audio_n);
 
 		int32_t actual_samples{};
 		auto const audio_data{ oip.func_get_audio(n, max_samples, &actual_samples, WAVE_FORMAT_PCM) };
-		if (!actual_samples) return true;
+		if (!actual_samples) return S_FALSE;
 
 		auto const sample_duration{ static_cast<int64_t>(actual_samples) * 10'000'000LL / max_samples };
 		auto const sample_time{ static_cast<int64_t>(n) * 10'000'000LL / oip.audio_rate };
 
-		auto audio_buffer{ wil::com_ptr<IMFMediaBuffer>{} };
-		THROW_IF_FAILED(MFCreateMediaBufferFromMediaType(&input_media_type, sample_duration, static_cast<DWORD>(actual_samples), 0, out_ptr(audio_buffer)));
+		auto audio_buffer{ wil::com_ptr_nothrow<IMFMediaBuffer>{} };
+		RETURN_IF_FAILED(MFCreateMediaBufferFromMediaType(&input_media_type, sample_duration, static_cast<DWORD>(actual_samples), 0, out_ptr(audio_buffer)));
 		uint8_t *media_data{};
 		DWORD media_data_max_length{};
-		THROW_IF_FAILED(audio_buffer->Lock(&media_data, &media_data_max_length, nullptr));
+		RETURN_IF_FAILED(audio_buffer->Lock(&media_data, &media_data_max_length, nullptr));
 		memmove_s(media_data, media_data_max_length, audio_data, static_cast<size_t>(actual_samples));
-		THROW_IF_FAILED(audio_buffer->Unlock());
-		THROW_IF_FAILED(audio_buffer->SetCurrentLength(static_cast<DWORD>(actual_samples)));
+		RETURN_IF_FAILED(audio_buffer->Unlock());
+		RETURN_IF_FAILED(audio_buffer->SetCurrentLength(static_cast<DWORD>(actual_samples)));
 
-		write_sample_to_sink_writer(sink_writer, index, *audio_buffer, sample_time, sample_duration);
+		RETURN_IF_FAILED(write_sample_to_sink_writer(sink_writer, index, *audio_buffer, sample_time, sample_duration));
 
-		return true;
+		return S_OK;
 	}
 
-	auto write_samples(OUTPUT_INFO const &oip, sink_writer_with_indices_t &&sink_writer_with_indices, IMFMediaTypes const &input_media_types, bool const &is_accelerated)
+	auto write_samples(OUTPUT_INFO const &oip, sink_writer_with_indices_t &&sink_writer_with_indices, IMFMediaTypes const &input_media_types)
 	{
 		auto is_aborted{ true };
 
@@ -480,11 +509,11 @@ namespace mfop
 		oip.func_set_buffer_size(8, 8);
 		aviutl_logger->info(aviutl_logger, L"Sending video samples to the writer...");
 		for (auto f{ 0 }; f < oip.n; ++f)
-			if (!write_video_sample(oip, *sink_writer, f, video_index, *input_video_media_type, is_accelerated))
+			if (FAILED(write_video_sample(oip, *sink_writer, f, video_index, *input_video_media_type)))
 				goto abort;
 		aviutl_logger->info(aviutl_logger, L"Sending audio samples to the writer...");
 		for (auto n{ 0 }; n < oip.audio_n; n += oip.audio_rate)
-			if (!write_audio_sample(oip, *sink_writer, n, audio_index, *input_audio_media_type))
+			if (FAILED(write_audio_sample(oip, *sink_writer, n, audio_index, *input_audio_media_type)))
 				goto abort;
 
 		aviutl_logger->info(aviutl_logger, L"Finalizing. It may take a while...");
@@ -497,7 +526,7 @@ namespace mfop
 	}
 
 	using unique_mfshutdown_call = unique_call<decltype(&::MFShutdown), ::MFShutdown>;
-	[[nodiscard]] inline auto MFStartup(DWORD &&flags = 0UL)
+	[[nodiscard]] inline auto MFStartup(DWORD &&flags = MFSTARTUP_FULL)
 	{
 		THROW_IF_FAILED(::MFStartup(MF_VERSION, flags));
 		return unique_mfshutdown_call();
@@ -516,9 +545,8 @@ namespace mfop
 		write_samples
 		(
 			oip,
-			make_initialized_sink_writer(oip, is_accelerated, output_video_format, video_quality, audio_bit_rate, input_media_types),
-			input_media_types,
-			is_accelerated
+			make_initialized_sink_writer(oip, output_video_format, video_quality, audio_bit_rate, input_media_types),
+			input_media_types
 		);
 	}
 }
