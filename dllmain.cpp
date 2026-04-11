@@ -20,17 +20,18 @@ auto func_output(OUTPUT_INFO *oip)
 {
 	using namespace mfop::configure;
 
-	mfop::output_file
+	return !!mfop::output_file
 	(
 		*oip,
-		get<video_quality>(),
-		get<audio_bit_rate>(),
-		get<is_hevc_preferable>(),
-		get<is_accelerated>(),
+		mfop::output_configuration
+		{
+			get<video_quality>(),
+			get<audio_bit_rate>(),
+			get<is_hevc_preferable>(),
+			get<is_accelerated>()
+		},
 		*aviutl_logger
 	);
-
-	return true;
 }
 
 auto func_config(HWND window, HINSTANCE instance)
@@ -48,7 +49,7 @@ extern "C"
 
 	__declspec(dllexport) auto GetOutputPluginTable() noexcept
 	{
-		static auto constexpr output_plugin_table{ OUTPUT_PLUGIN_TABLE{
+		static OUTPUT_PLUGIN_TABLE constexpr output_plugin_table{
 			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
 			L"Media Foundation 出力",					// プラグインの名前
 			L"MP4 (*.mp4)\0*.mp4\0Advanced Systems Format (*.wmv)\0*.wmv\0",					// 出力ファイルのフィルタ
@@ -56,7 +57,7 @@ extern "C"
 			func_output,									// 出力時に呼ばれる関数へのポインタ
 			func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 			nullptr,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
-		} };
+		};
 		return &output_plugin_table;
 	}
 }

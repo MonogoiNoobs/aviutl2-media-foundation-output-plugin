@@ -113,9 +113,9 @@ namespace mfop
 	auto convert_frame_rate_to_average_time_per_frame(IMFMediaType &media_type)
 	{
 		uint32_t rate{}, scale{};
-		THROW_IF_FAILED(MFGetAttributeRatio(&media_type, MF_MT_FRAME_RATE, &rate, &scale));
+		MFGetAttributeRatio(&media_type, MF_MT_FRAME_RATE, &rate, &scale);
 		uint64_t result{};
-		THROW_IF_FAILED(MFFrameRateToAverageTimePerFrame(rate, scale, &result));
+		MFFrameRateToAverageTimePerFrame(rate, scale, &result);
 		return result;
 	}
 
@@ -455,13 +455,13 @@ namespace mfop
 		long stride{};
 		uint8_t *buffer_begin{};
 		DWORD buffer_size{};
-		RETURN_IF_FAILED(video_2d_buffer->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_begin, &buffer_size));
+		video_2d_buffer->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_begin, &buffer_size);
 		RETURN_IF_FAILED(MFCopyImage(scanline, stride, is_accelerated ? yuy2_to_nv12(span{ frame_image, buffer_size }, { oip.w, oip.h }).get() : frame_image, stride, stride, oip.h));
-		RETURN_IF_FAILED(video_2d_buffer->Unlock2D());
+		video_2d_buffer->Unlock2D();
 
 		DWORD contiguous_length{};
-		RETURN_IF_FAILED(video_2d_buffer->GetContiguousLength(&contiguous_length));
-		RETURN_IF_FAILED(video_buffer->SetCurrentLength(contiguous_length));
+		video_2d_buffer->GetContiguousLength(&contiguous_length);
+		video_buffer->SetCurrentLength(contiguous_length);
 
 		RETURN_IF_FAILED(write_sample_to_sink_writer(sink_writer, index, *video_buffer, time_stamp * f, time_stamp));
 
@@ -491,38 +491,12 @@ namespace mfop
 		RETURN_IF_FAILED(audio_buffer->Lock(&media_data, &media_data_max_length, nullptr));
 		memmove_s(media_data, media_data_max_length, audio_data, static_cast<size_t>(actual_samples));
 		RETURN_IF_FAILED(audio_buffer->Unlock());
-		RETURN_IF_FAILED(audio_buffer->SetCurrentLength(static_cast<DWORD>(actual_samples)));
+
+		audio_buffer->SetCurrentLength(static_cast<DWORD>(actual_samples));
 
 		RETURN_IF_FAILED(write_sample_to_sink_writer(sink_writer, index, *audio_buffer, sample_time, sample_duration));
 
 		return S_OK;
-	}
-
-	auto write_samples(OUTPUT_INFO const &oip, GUID const &output_video_format, uint32_t const &video_quality, uint32_t const &audio_bit_rate, IMFMediaTypes const &input_media_types)
-	{
-		auto is_aborted{ true };
-
-		auto const [sink_writer, indices] { make_initialized_sink_writer(oip, output_video_format, video_quality, audio_bit_rate, input_media_types) };
-		auto const [video_index, audio_index] { indices };
-		auto const [input_video_media_type, input_audio_media_type] { input_media_types };
-
-		oip.func_set_buffer_size(8, 8);
-		aviutl_logger->info(aviutl_logger, L"Sending video samples to the writer...");
-		for (auto f{ 0 }; f < oip.n; ++f)
-			if (FAILED(write_video_sample(oip, *sink_writer, f, video_index, *input_video_media_type)))
-				goto abort;
-		aviutl_logger->info(aviutl_logger, L"Sending audio samples to the writer...");
-		for (auto n{ 0 }; n < oip.audio_n; n += oip.audio_rate)
-			if (FAILED(write_audio_sample(oip, *sink_writer, n, audio_index, *input_audio_media_type)))
-				goto abort;
-
-		aviutl_logger->info(aviutl_logger, L"Finalizing. It may take a while...");
-		sink_writer->Finalize();
-		is_aborted = false;
-
-	abort:
-		aviutl_logger->info(aviutl_logger, is_aborted ? L"Aborted." : L"Done.");
-		return;
 	}
 
 	using unique_mfshutdown_call = unique_call<decltype(&::MFShutdown), ::MFShutdown>;
@@ -532,23 +506,36 @@ namespace mfop
 		return unique_mfshutdown_call();
 	}
 
-	void output_file(OUTPUT_INFO const &oip, std::uint32_t &&video_quality, std::uint32_t &&audio_bit_rate, bool &&is_hevc_preferable, bool &&is_accelerated, LOG_HANDLE &logger)
+	expected<HRESULT, HRESULT> output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
 	{
+		HRESULT hr{ S_OK };
+
 		auto const com_cleanup{ CoInitializeEx() };
 		auto const mf_cleanup{ MFStartup() };
 
 		aviutl_logger = &logger;
 
-		auto const output_video_format{ get_suitable_output_video_format_guid(filesystem::path(oip.savefile).extension(), is_hevc_preferable) };
-		auto const input_media_types{ make_input_media_types(oip, output_video_format, is_accelerated) };
+		auto const output_video_format{ get_suitable_output_video_format_guid(filesystem::path(oip.savefile).extension(), configuration.is_hevc_preferable) };
 
-		write_samples
-		(
-			oip,
-			output_video_format,
-			video_quality,
-			audio_bit_rate,
-			input_media_types
-		);
+		auto const input_media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
+
+		auto const [sink_writer, indices] { make_initialized_sink_writer(oip, output_video_format, configuration.video_quality, configuration.audio_bit_rate, input_media_types) };
+		auto const [video_index, audio_index] { indices };
+
+		oip.func_set_buffer_size(8, 8);
+		aviutl_logger->info(aviutl_logger, L"Sending video samples to the writer...");
+		for (auto f{ 0 }; f < oip.n; ++f)
+			if ((hr = write_video_sample(oip, *sink_writer, f, video_index, *input_media_types.first)) < 0)
+				return unexpected{ hr };
+		aviutl_logger->info(aviutl_logger, L"Sending audio samples to the writer...");
+		for (auto n{ 0 }; n < oip.audio_n; n += oip.audio_rate)
+			if ((hr = write_audio_sample(oip, *sink_writer, n, audio_index, *input_media_types.second)) < 0)
+				return unexpected{ hr };
+
+		aviutl_logger->info(aviutl_logger, L"Finalizing. It may take a while...");
+		if ((hr = sink_writer->Finalize()) < 0)
+			return unexpected{ hr };
+
+		return S_OK;
 	}
 }

@@ -11,18 +11,24 @@ module;
 export module mfop.core;
 
 import std;
+import mfop.configure;
 
 namespace mfop
 {
 	export 
 	{
-		void output_file
+		struct output_configuration
+		{
+			std::underlying_type<configure::video_quality>::type video_quality;
+			std::underlying_type<configure::audio_bit_rate>::type audio_bit_rate;
+			std::underlying_type<configure::is_hevc_preferable>::type is_hevc_preferable;
+			std::underlying_type<configure::is_accelerated>::type is_accelerated;
+		};
+
+		std::expected<HRESULT, HRESULT> output_file
 		(
 			OUTPUT_INFO const &oip,
-			std::uint32_t &&video_quality,
-			std::uint32_t &&audio_bit_rate,
-			bool &&is_hevc_preferable,
-			bool &&is_accelerated,
+			output_configuration &&configuration,
 			LOG_HANDLE &logger
 		); 
 	}
