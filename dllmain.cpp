@@ -16,11 +16,19 @@ import mfop;
 
 static LOG_HANDLE *aviutl_logger;
 
-auto func_output(OUTPUT_INFO *oip)
+auto string_to_wstring(std::string const &str)
+{
+	auto const required_size{ static_cast<std::size_t>(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, str.c_str(), static_cast<std::int32_t>(str.size()), nullptr, 0)) };
+	std::wstring wstr(required_size, L'\0');
+	MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, str.c_str(), static_cast<std::int32_t>(str.size()), &wstr.front(), static_cast<std::int32_t>(required_size));
+	return wstr;
+}
+
+auto func_output(OUTPUT_INFO *oip) noexcept
 {
 	using namespace mfop::configure;
 
-	return !!mfop::output_file
+	auto const result{ mfop::output_file
 	(
 		*oip,
 		mfop::output_configuration
@@ -31,7 +39,17 @@ auto func_output(OUTPUT_INFO *oip)
 			get<is_accelerated>()
 		},
 		*aviutl_logger
-	);
+	) };
+
+	if (!result)
+	{
+		aviutl_logger->error(aviutl_logger, std::format(L"FAILED TO OUTPUT: {} (0x800{:x}{:04x}, in {})", string_to_wstring(std::system_category().message(result.error().code)), HRESULT_FACILITY(result.error().code), HRESULT_CODE(result.error().code), string_to_wstring(result.error().where)).c_str());
+		return false;
+	}
+
+	aviutl_logger->info(aviutl_logger, L"Output completed successfully.");
+
+	return true;
 }
 
 auto func_config(HWND window, HINSTANCE instance)

@@ -31,7 +31,13 @@ namespace mfop
 			std::underlying_type<configure::is_accelerated>::type is_accelerated;
 		};
 
-		std::expected<HRESULT, HRESULT> output_file
+		struct error
+		{
+			HRESULT code;
+			std::string where;
+		};
+
+		std::expected<HRESULT, error> output_file
 		(
 			OUTPUT_INFO const &oip,
 			output_configuration &&configuration,

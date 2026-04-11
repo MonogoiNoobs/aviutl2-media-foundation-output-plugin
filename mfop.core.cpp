@@ -30,7 +30,17 @@ module;
 
 #define UNEXPECT_IF_FAILED(hr) do { \
 	HRESULT const __mfop_cond{ hr }; \
-	if (FAILED(__mfop_cond)) return std::unexpected{ mfop_cond }; \
+	if (FAILED(__mfop_cond)) \
+	{ \
+		return std::unexpected \
+		{ \
+			mfop::error \
+			{ \
+				.code = __mfop_cond, \
+				.where = __func__ \
+			} \
+		}; \
+	} \
 } while (0)
 
 module mfop.core;
@@ -100,7 +110,7 @@ namespace mfop
 		return SUCCEEDED(D3D12CreateDevice(nullptr, minimum_feature_level, __uuidof(D3D12DeviceVersion), nullptr));
 	}
 
-	auto constexpr get_pcm_block_alignment(uint32_t &&audio_ch, uint32_t &&bit) noexcept
+	auto constexpr get_pcm_block_alignment(int32_t const &audio_ch, uint32_t &&bit) noexcept
 	{
 		return (audio_ch * bit) / 8;
 	}
@@ -110,7 +120,7 @@ namespace mfop
 		return is_accelerated ? MFVideoFormat_NV12 : MFVideoFormat_YUY2;
 	}
 
-	auto convert_frame_rate_to_average_time_per_frame(IMFMediaType &media_type)
+	auto convert_frame_rate_to_average_time_per_frame(IMFMediaType &media_type) noexcept
 	{
 		uint32_t rate{}, scale{};
 		MFGetAttributeRatio(&media_type, MF_MT_FRAME_RATE, &rate, &scale);
@@ -126,41 +136,41 @@ namespace mfop
 		return MFVideoFormat_H264;
 	}
 
-	auto add_windows_media_qvba_activation_media_attributes(IMFAttributes &attributes, uint32_t const &quality)
+	auto add_windows_media_qvba_activation_media_attributes(IMFAttributes &attributes, uint32_t const &quality) noexcept
 	{
-		THROW_IF_FAILED(attributes.SetUINT32(MFPKEY_VBRENABLED.fmtid, true));
-		THROW_IF_FAILED(attributes.SetUINT32(MFPKEY_CONSTRAIN_ENUMERATED_VBRQUALITY.fmtid, true));
-		THROW_IF_FAILED(attributes.SetUINT32(MFPKEY_DESIRED_VBRQUALITY.fmtid, quality));
+		attributes.SetUINT32(MFPKEY_VBRENABLED.fmtid, true);
+		attributes.SetUINT32(MFPKEY_CONSTRAIN_ENUMERATED_VBRQUALITY.fmtid, true);
+		attributes.SetUINT32(MFPKEY_DESIRED_VBRQUALITY.fmtid, quality);
 	}
 
-	auto set_color_space_media_types(IMFMediaType &media_type, int32_t const &height)
+	auto set_color_space_media_types(IMFMediaType &media_type, int32_t const &height) noexcept
 	{
-		THROW_IF_FAILED(media_type.SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235));
-		THROW_IF_FAILED(media_type.SetUINT32(MF_MT_VIDEO_CHROMA_SITING, MFVideoChromaSubsampling_MPEG2));
+		media_type.SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
+		media_type.SetUINT32(MF_MT_VIDEO_CHROMA_SITING, MFVideoChromaSubsampling_MPEG2);
 		if (height <= 720)
 		{
 			aviutl_logger->info(aviutl_logger, L"Color space desires BT.601.");
-			THROW_IF_FAILED(media_type.SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_SMPTE170M));
-			THROW_IF_FAILED(media_type.SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT601));
-			THROW_IF_FAILED(media_type.SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709));
+			media_type.SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_SMPTE170M);
+			media_type.SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT601);
+			media_type.SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709);
 		}
 		else if (height >= 2160)
 		{
 			aviutl_logger->info(aviutl_logger, L"Color space desires BT.2020 (12bit).");
-			THROW_IF_FAILED(media_type.SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT2020));
-			THROW_IF_FAILED(media_type.SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT2020_12));
-			THROW_IF_FAILED(media_type.SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_2020));
+			media_type.SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT2020);
+			media_type.SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT2020_12);
+			media_type.SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_2020);
 		}
 		else
 		{
 			aviutl_logger->info(aviutl_logger, L"Color space desires BT.709.");
-			THROW_IF_FAILED(media_type.SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709));
-			THROW_IF_FAILED(media_type.SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709));
-			THROW_IF_FAILED(media_type.SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709));
+			media_type.SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709);
+			media_type.SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709);
+			media_type.SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709);
 		}
 	}
 
-	auto make_input_video_media_type(resolution_t &&resolution, fps_t &&fps, bool const &is_accelerated)
+	auto make_input_video_media_type(resolution_t &&resolution, fps_t &&fps, bool const &is_accelerated) noexcept
 	{
 		auto const [width, height] { resolution };
 		auto const [rate, scale] { fps };
@@ -168,51 +178,51 @@ namespace mfop
 		auto const video_format{ get_suitable_input_video_format_guid(is_accelerated) };
 
 		uint32_t image_size{};
-		THROW_IF_FAILED(MFCalculateImageSize(video_format, width, height, &image_size));
+		MFCalculateImageSize(video_format, width, height, &image_size);
 
 		long default_stride{};
-		THROW_IF_FAILED(MFGetStrideForBitmapInfoHeader(video_format.Data1, width, &default_stride));
+		MFGetStrideForBitmapInfoHeader(video_format.Data1, width, &default_stride);
 
-		auto input_video_media_type{ com_ptr<IMFMediaType>{} };
-		THROW_IF_FAILED(MFCreateMediaType(out_ptr(input_video_media_type)));
-		THROW_IF_FAILED(input_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
-		THROW_IF_FAILED(input_video_media_type->SetGUID(MF_MT_SUBTYPE, video_format));
-		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
-		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_DEFAULT_STRIDE, default_stride));
-		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_SAMPLE_SIZE, image_size));
-		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true));
-		THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_FIXED_SIZE_SAMPLES, true));
-		THROW_IF_FAILED(MFSetAttributeSize(input_video_media_type.get(), MF_MT_FRAME_SIZE, width, height));
-		THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_FRAME_RATE, rate, scale));
-		THROW_IF_FAILED(MFSetAttributeRatio(input_video_media_type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
+		com_ptr_nothrow<IMFMediaType> input_video_media_type{};
+		MFCreateMediaType(out_ptr(input_video_media_type));
+		input_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+		input_video_media_type->SetGUID(MF_MT_SUBTYPE, video_format);
+		input_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+		input_video_media_type->SetUINT32(MF_MT_DEFAULT_STRIDE, default_stride);
+		input_video_media_type->SetUINT32(MF_MT_SAMPLE_SIZE, image_size);
+		input_video_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true);
+		//input_video_media_type->SetUINT32(MF_MT_FIXED_SIZE_SAMPLES, true);
+		MFSetAttributeSize(input_video_media_type.get(), MF_MT_FRAME_SIZE, width, height);
+		MFSetAttributeRatio(input_video_media_type.get(), MF_MT_FRAME_RATE, rate, scale);
+		MFSetAttributeRatio(input_video_media_type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
 
-		if (is_accelerated) THROW_IF_FAILED(input_video_media_type->SetUINT32(MF_MT_D3D_RESOURCE_VERSION, is_dx12_available() ? MF_D3D12_RESOURCE : MF_D3D11_RESOURCE));
+		if (is_accelerated) input_video_media_type->SetUINT32(MF_MT_D3D_RESOURCE_VERSION, is_dx12_available() ? MF_D3D12_RESOURCE : MF_D3D11_RESOURCE);
 
 		return input_video_media_type;
 	}
 
 	auto make_input_audio_media_type(int32_t const &channel_count, int32_t const &sampling_rate, GUID const &output_video_format)
 	{
-		auto input_audio_media_type{ com_ptr<IMFMediaType>{} };
-		THROW_IF_FAILED(MFCreateMediaType(out_ptr(input_audio_media_type)));
-		THROW_IF_FAILED(input_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
-		THROW_IF_FAILED(input_audio_media_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM));
-		THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, audio_bits_per_sample));
-		THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, sampling_rate));
-		THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channel_count));
-		THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true));
+		com_ptr_nothrow<IMFMediaType> input_audio_media_type{};
+		MFCreateMediaType(out_ptr(input_audio_media_type));
+		input_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+		input_audio_media_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
+		input_audio_media_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, audio_bits_per_sample);
+		input_audio_media_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, sampling_rate);
+		input_audio_media_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channel_count);
+		input_audio_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true);
 
 		if (output_video_format == MFVideoFormat_WVC1)
 		{
-			auto const block_alignment{ get_pcm_block_alignment(static_cast<uint32_t>(channel_count), audio_bits_per_sample) };
-			THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, block_alignment));
-			THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, block_alignment * sampling_rate));
-			THROW_IF_FAILED(input_audio_media_type->SetUINT32(MF_MT_AVG_BITRATE, sampling_rate * audio_bits_per_sample * channel_count));
+			auto const block_alignment{ get_pcm_block_alignment(channel_count, audio_bits_per_sample) };
+			input_audio_media_type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, block_alignment);
+			input_audio_media_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, block_alignment * sampling_rate);
+			input_audio_media_type->SetUINT32(MF_MT_AVG_BITRATE, sampling_rate * audio_bits_per_sample * channel_count);
 		}
 		return input_audio_media_type;
 	}
 
-	auto make_input_media_types(OUTPUT_INFO const &oip, GUID const &output_video_format, bool const &is_accelerated)
+	auto make_input_media_types(OUTPUT_INFO const &oip, GUID const &output_video_format, bool const &is_accelerated) noexcept
 	{
 		return IMFMediaTypes
 		{
@@ -261,7 +271,7 @@ namespace mfop
 			THROW_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, __uuidof(ID3D12Device), out_ptr(directx_device)));
 			break;
 		}
-		com_ptr<IMFDXGIDeviceManager> dxgi_device_manager{};
+		com_ptr_nothrow<IMFDXGIDeviceManager> dxgi_device_manager{};
 		uint32_t reset_token{};
 		THROW_IF_FAILED(MFCreateDXGIDeviceManager(&reset_token, out_ptr(dxgi_device_manager)));
 		THROW_IF_FAILED(dxgi_device_manager->ResetDevice(directx_device.get(), reset_token));
@@ -269,17 +279,17 @@ namespace mfop
 		return dxgi_device_manager;
 	}
 
-	[[nodiscard]] auto make_sink_writer(wstring_view output_name, IMFAttributes &media_type, GUID const &output_video_format)
+	[[nodiscard]] expected<com_ptr_nothrow<IMFSinkWriter>, error> make_sink_writer(wstring_view output_name, IMFAttributes &media_type, GUID const &output_video_format) noexcept
 	{
-		auto sink_writer_attributes{ com_ptr<IMFAttributes>{} };
-		THROW_IF_FAILED(MFCreateAttributes(out_ptr(sink_writer_attributes), 3));
+		auto sink_writer_attributes{ com_ptr_nothrow<IMFAttributes>{} };
+		MFCreateAttributes(out_ptr(sink_writer_attributes), 3);
 
-		THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, true));
+		sink_writer_attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, true);
 
 		if (output_video_format == MFVideoFormat_H264)
 		{
-			THROW_IF_FAILED(sink_writer_attributes->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_FMPEG4));
-			THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_MPEG4SINK_MOOV_BEFORE_MDAT, true));
+			sink_writer_attributes->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_FMPEG4);
+			sink_writer_attributes->SetUINT32(MF_MPEG4SINK_MOOV_BEFORE_MDAT, true);
 		}
 
 		uint32_t d3d_resource_version{};
@@ -290,155 +300,164 @@ namespace mfop
 				THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true));
 				THROW_IF_FAILED(sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, make_dxgi_device_manager_ptr(d3d_resource_version).get()));
 			}
-			catch (HRESULT const &)
+			catch (exception const &)
 			{
 				aviutl_logger->warn(aviutl_logger, L"Failed to initialize hardware acceleration. Falling back to software encoding.");
 			}
 		}
 
-		auto sink_writer{ com_ptr<IMFSinkWriter>{} };
-		THROW_IF_FAILED(MFCreateSinkWriterFromURL(output_name.data(), nullptr, sink_writer_attributes.get(), out_ptr(sink_writer)));
+		auto sink_writer{ com_ptr_nothrow<IMFSinkWriter>{} };
+		UNEXPECT_IF_FAILED(MFCreateSinkWriterFromURL(output_name.data(), nullptr, sink_writer_attributes.get(), out_ptr(sink_writer)));
 
 		return sink_writer;
 	}
 
-	[[nodiscard]] auto configure_video_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, GUID const &output_video_format)
+	[[nodiscard]] expected<DWORD, error> configure_video_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		uint32_t width, height;
-		THROW_IF_FAILED(MFGetAttributeSize(&input_media_type, MF_MT_FRAME_SIZE, &width, &height));
+		MFGetAttributeSize(&input_media_type, MF_MT_FRAME_SIZE, &width, &height);
 
 		uint32_t rate, scale;
-		THROW_IF_FAILED(MFGetAttributeRatio(&input_media_type, MF_MT_FRAME_RATE, &rate, &scale));
+		MFGetAttributeRatio(&input_media_type, MF_MT_FRAME_RATE, &rate, &scale);
 
-		auto output_video_media_type{ com_ptr<IMFMediaType>{} };
-		THROW_IF_FAILED(MFCreateMediaType(out_ptr(output_video_media_type)));
+		auto output_video_media_type{ com_ptr_nothrow<IMFMediaType>{} };
+		MFCreateMediaType(out_ptr(output_video_media_type));
 
-		THROW_IF_FAILED(output_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
-		THROW_IF_FAILED(output_video_media_type->SetGUID(MF_MT_SUBTYPE, output_video_format));
-		THROW_IF_FAILED(MFSetAttributeSize(output_video_media_type.get(), MF_MT_FRAME_SIZE, width, height));
-		THROW_IF_FAILED(MFSetAttributeRatio(output_video_media_type.get(), MF_MT_FRAME_RATE, rate, scale));
-		THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
+		output_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+		output_video_media_type->SetGUID(MF_MT_SUBTYPE, output_video_format);
+		MFSetAttributeSize(output_video_media_type.get(), MF_MT_FRAME_SIZE, width, height);
+		MFSetAttributeRatio(output_video_media_type.get(), MF_MT_FRAME_RATE, rate, scale);
+		output_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
 		set_color_space_media_types(*output_video_media_type, height);
 
 		switch (output_video_format.Data1)
 		{
 		case FCC('H264'):
-			THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High));
+			output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High);
 			break;
 		case FCC('HEVC'):
-			THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH265VProfile_Main_420_8));
-			THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_MPEG2_LEVEL, eAVEncH265VLevel5_1));
+			output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH265VProfile_Main_420_8);
+			output_video_media_type->SetUINT32(MF_MT_MPEG2_LEVEL, eAVEncH265VLevel5_1);
 			[[fallthrough]];
 		default:
-			THROW_IF_FAILED(output_video_media_type->SetUINT32(MF_MT_AVG_BITRATE, 12000000));
+			output_video_media_type->SetUINT32(MF_MT_AVG_BITRATE, 12000000);
 			break;
 		}
 
 		DWORD video_index{};
-		THROW_IF_FAILED(sink_writer.AddStream(output_video_media_type.get(), &video_index));
+		UNEXPECT_IF_FAILED(sink_writer.AddStream(output_video_media_type.get(), &video_index));
 
 		return video_index;
 	}
 
-	[[nodiscard]] auto configure_audio_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, uint32_t const &output_bit_rate, GUID const &output_video_format)
+	[[nodiscard]] expected<DWORD, error> configure_audio_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, uint32_t const &output_bit_rate, GUID const &output_video_format) noexcept
 	{
 		__assume(output_bit_rate <= 3);
 
-		auto output_audio_media_type{ com_ptr<IMFMediaType>{} };
-		THROW_IF_FAILED(MFCreateMediaType(out_ptr(output_audio_media_type)));
+		auto output_audio_media_type{ com_ptr_nothrow<IMFMediaType>{} };
+		MFCreateMediaType(out_ptr(output_audio_media_type));
 
-		THROW_IF_FAILED(output_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
-		THROW_IF_FAILED(output_audio_media_type->SetGUID(MF_MT_SUBTYPE, output_video_format == MFVideoFormat_WVC1 ? MFAudioFormat_WMAudioV9 : MFAudioFormat_AAC));
-		THROW_IF_FAILED(output_audio_media_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, MFGetAttributeUINT32(&input_media_type, MF_MT_AUDIO_NUM_CHANNELS, 2)));
-		THROW_IF_FAILED(output_audio_media_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, (3 + output_bit_rate) * 4000));
-		THROW_IF_FAILED(output_audio_media_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, MFGetAttributeUINT32(&input_media_type, MF_MT_AUDIO_SAMPLES_PER_SECOND, 48000)));
-		THROW_IF_FAILED(output_audio_media_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, audio_bits_per_sample));
+		output_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+		output_audio_media_type->SetGUID(MF_MT_SUBTYPE, output_video_format == MFVideoFormat_WVC1 ? MFAudioFormat_WMAudioV9 : MFAudioFormat_AAC);
+		output_audio_media_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, MFGetAttributeUINT32(&input_media_type, MF_MT_AUDIO_NUM_CHANNELS, 2));
+		output_audio_media_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, (3 + output_bit_rate) * 4000);
+		output_audio_media_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, MFGetAttributeUINT32(&input_media_type, MF_MT_AUDIO_SAMPLES_PER_SECOND, 48000));
+		output_audio_media_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, audio_bits_per_sample);
 
 		DWORD audio_index{};
-		THROW_IF_FAILED(sink_writer.AddStream(output_audio_media_type.get(), &audio_index));
+		UNEXPECT_IF_FAILED(sink_writer.AddStream(output_audio_media_type.get(), &audio_index));
 
 		return audio_index;
 	}
 
-	auto configure_video_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_media_type)
+	expected<HRESULT, error> configure_video_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_media_type) noexcept
 	{
 		__assume(quality <= 100);
 
-		auto encoder_attributes{ com_ptr<IMFAttributes>{} };
-		THROW_IF_FAILED(MFCreateAttributes(out_ptr(encoder_attributes), 5));
+		auto encoder_attributes{ com_ptr_nothrow<IMFAttributes>{} };
+		MFCreateAttributes(out_ptr(encoder_attributes), 5);
 
 		switch (output_video_format.Data1)
 		{
 		default:
 		case FCC('H264'):
-			THROW_IF_FAILED(encoder_attributes->SetUINT32(CODECAPI_AVEncH264CABACEnable, true));
+			encoder_attributes->SetUINT32(CODECAPI_AVEncH264CABACEnable, true);
 			[[fallthrough]];
 		case FCC('HEVC'):
-			THROW_IF_FAILED(encoder_attributes->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 2));
-			THROW_IF_FAILED(encoder_attributes->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_Quality));
-			THROW_IF_FAILED(encoder_attributes->SetUINT32(CODECAPI_AVEncCommonQuality, quality));
-			THROW_IF_FAILED(encoder_attributes->SetUINT32(CODECAPI_AVEncNumWorkerThreads, 0));
+			encoder_attributes->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 2);
+			encoder_attributes->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_Quality);
+			encoder_attributes->SetUINT32(CODECAPI_AVEncCommonQuality, quality);
+			encoder_attributes->SetUINT32(CODECAPI_AVEncNumWorkerThreads, 0);
 			break;
 		case FCC('WVC1'):
-			THROW_IF_FAILED(encoder_attributes->SetUINT32(MFPKEY_COMPRESSIONOPTIMIZATIONTYPE.fmtid, 1));
+			encoder_attributes->SetUINT32(MFPKEY_COMPRESSIONOPTIMIZATIONTYPE.fmtid, 1);
 			add_windows_media_qvba_activation_media_attributes(*encoder_attributes, quality);
 			break;
 		}
 
-		THROW_IF_FAILED(sink_writer.SetInputMediaType(index, &input_media_type, encoder_attributes.get()));
+		UNEXPECT_IF_FAILED(sink_writer.SetInputMediaType(index, &input_media_type, encoder_attributes.get()));
+
+		return S_OK;
 	}
 
-	auto configure_audio_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_media_type)
+	expected<HRESULT, error> configure_audio_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_media_type) noexcept
 	{
-		auto encoder_attributes{ com_ptr<IMFAttributes>{} };
+		auto encoder_attributes{ com_ptr_nothrow<IMFAttributes>{} };
 
 		if (output_video_format == MFVideoFormat_WVC1)
 		{
-			THROW_IF_FAILED(MFCreateAttributes(out_ptr(encoder_attributes), 3));
+			MFCreateAttributes(out_ptr(encoder_attributes), 3);
 			add_windows_media_qvba_activation_media_attributes(*encoder_attributes, quality);
 		}
 
-		THROW_IF_FAILED(sink_writer.SetInputMediaType(index, &input_media_type, encoder_attributes.get()));
+		UNEXPECT_IF_FAILED(sink_writer.SetInputMediaType(index, &input_media_type, encoder_attributes.get()));
+
+		return S_OK;
 	}
 
-	auto configure_video_stream(IMFSinkWriter &sink_writer, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format)
+	expected<DWORD, error> configure_video_stream(IMFSinkWriter &sink_writer, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
-		auto index{ configure_video_output(sink_writer, input_media_type, output_video_format) };
-		configure_video_input(sink_writer, index, quality, output_video_format, input_media_type);
-		return index;
+		auto const index{ configure_video_output(sink_writer, input_media_type, output_video_format) };
+		if (!index) return unexpected{ index.error() };
+		auto const result{ configure_video_input(sink_writer, *index, quality, output_video_format, input_media_type) };
+		if (!result) return unexpected{ result.error() };
+		return *index;
 	}
 
-	auto configure_audio_stream(IMFSinkWriter &sink_writer, int32_t const &output_bit_rate, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format)
+	expected<DWORD, error> configure_audio_stream(IMFSinkWriter &sink_writer, int32_t const &output_bit_rate, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		auto const index{ configure_audio_output(sink_writer, input_media_type, output_bit_rate, output_video_format) };
-		configure_audio_input(sink_writer, index, quality, output_video_format, input_media_type);
-		return index;
+		if (!index) return unexpected{ index.error() };
+		auto const result{ configure_audio_input(sink_writer, *index, quality, output_video_format, input_media_type) };
+		if (!result) return unexpected{ result.error() };
+		return *index;
 	}
 
-	auto configure_streams(IMFSinkWriter &sink_writer, uint32_t const &quality, uint32_t const &output_bit_rate, IMFMediaTypes const &input_media_types, GUID const &output_video_format)
+	expected<stream_indices_t, error> configure_streams(IMFSinkWriter &sink_writer, uint32_t const &quality, uint32_t const &output_bit_rate, IMFMediaTypes const &input_media_types, GUID const &output_video_format) noexcept
 	{
-		return stream_indices_t{
-			configure_video_stream(sink_writer, quality, *input_media_types.first, output_video_format),
-			configure_audio_stream(sink_writer, output_bit_rate, quality, *input_media_types.second, output_video_format)
-		};
+		auto const video_index{ configure_video_stream(sink_writer, quality, *input_media_types.first, output_video_format) };
+		if (!video_index) return unexpected{ video_index.error() };
+
+		auto const audio_index{ configure_audio_stream(sink_writer, output_bit_rate, quality, *input_media_types.second, output_video_format) };
+		if (!audio_index) return unexpected{ audio_index.error() };
+
+		return stream_indices_t{ move(*video_index), move(*audio_index) };
 	}
 
-	auto make_initialized_sink_writer(OUTPUT_INFO const &oip, GUID const &output_video_format, uint32_t const &video_quality, uint32_t const &audio_bit_rate, IMFMediaTypes const &media_types)
+	expected<sink_writer_with_indices_t, error> make_initialized_sink_writer(OUTPUT_INFO const &oip, GUID const &output_video_format, uint32_t const &video_quality, uint32_t const &audio_bit_rate, IMFMediaTypes const &media_types) noexcept
 	{
 		auto const sink_writer{ make_sink_writer(oip.savefile, *media_types.first, output_video_format) };
-		auto const indices{ configure_streams(*sink_writer, video_quality, audio_bit_rate, media_types, output_video_format) };
+		if (!sink_writer) return unexpected{ sink_writer.error() };
+		auto const indices{ configure_streams(**sink_writer, video_quality, audio_bit_rate, media_types, output_video_format) };
+		if (!indices) return unexpected{ indices.error() };
 
-		THROW_IF_FAILED(sink_writer->BeginWriting());
+		UNEXPECT_IF_FAILED((*sink_writer)->BeginWriting());
 
-		return sink_writer_with_indices_t{ move(sink_writer), move(indices) };
+		return sink_writer_with_indices_t{ move(*sink_writer), move(*indices) };
 	}
 
-	auto write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type) noexcept
+	auto write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type, bool const &is_accelerated, int64_t const &time_stamp) noexcept
 	{
-		static uint32_t d3d_resource_version{};
-		static auto const is_accelerated{ SUCCEEDED(input_media_type.GetUINT32(MF_MT_D3D_RESOURCE_VERSION, &d3d_resource_version)) };
-		static auto const time_stamp{ convert_frame_rate_to_average_time_per_frame(input_media_type) };
-
 		if (oip.func_is_abort()) return E_ABORT;
 
 		oip.func_rest_time_disp(f, oip.n);
@@ -468,11 +487,8 @@ namespace mfop
 		return S_OK;
 	}
 
-	auto write_audio_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &n, DWORD const &index, IMFMediaType &input_media_type) noexcept
+	auto write_audio_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &n, DWORD const &index, IMFMediaType &input_media_type, int32_t const &max_samples) noexcept
 	{
-		static auto const block_alignment{ get_pcm_block_alignment(static_cast<uint32_t>(oip.audio_ch), audio_bits_per_sample) };
-		static auto const max_samples{ static_cast<int32_t>(block_alignment * oip.audio_rate) };
-
 		if (oip.func_is_abort()) return E_ABORT;
 
 		oip.func_rest_time_disp(n, oip.audio_n);
@@ -486,11 +502,12 @@ namespace mfop
 
 		auto audio_buffer{ wil::com_ptr_nothrow<IMFMediaBuffer>{} };
 		RETURN_IF_FAILED(MFCreateMediaBufferFromMediaType(&input_media_type, sample_duration, static_cast<DWORD>(actual_samples), 0, out_ptr(audio_buffer)));
+
 		uint8_t *media_data{};
 		DWORD media_data_max_length{};
-		RETURN_IF_FAILED(audio_buffer->Lock(&media_data, &media_data_max_length, nullptr));
-		memmove_s(media_data, media_data_max_length, audio_data, static_cast<size_t>(actual_samples));
-		RETURN_IF_FAILED(audio_buffer->Unlock());
+		audio_buffer->Lock(&media_data, &media_data_max_length, nullptr);
+		if (memmove_s(media_data, media_data_max_length, audio_data, static_cast<size_t>(actual_samples)) != 0) return E_OUTOFMEMORY;
+		audio_buffer->Unlock();
 
 		audio_buffer->SetCurrentLength(static_cast<DWORD>(actual_samples));
 
@@ -500,17 +517,17 @@ namespace mfop
 	}
 
 	using unique_mfshutdown_call = unique_call<decltype(&::MFShutdown), ::MFShutdown>;
-	[[nodiscard]] inline auto MFStartup(DWORD &&flags = MFSTARTUP_FULL)
+	[[nodiscard]] inline unique_mfshutdown_call MFStartup(DWORD &&flags = MFSTARTUP_FULL)
 	{
-		THROW_IF_FAILED(::MFStartup(MF_VERSION, flags));
-		return unique_mfshutdown_call();
+		FAIL_FAST_IF_FAILED(::MFStartup(MF_VERSION, flags));
+		return {};
 	}
 
-	expected<HRESULT, HRESULT> output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
+	expected<HRESULT, error> output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
 	{
-		HRESULT hr{ S_OK };
+		auto hr{ S_OK };
 
-		auto const com_cleanup{ CoInitializeEx() };
+		auto const com_cleanup{ CoInitializeEx_failfast() };
 		auto const mf_cleanup{ MFStartup() };
 
 		aviutl_logger = &logger;
@@ -519,22 +536,36 @@ namespace mfop
 
 		auto const input_media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
 
-		auto const [sink_writer, indices] { make_initialized_sink_writer(oip, output_video_format, configuration.video_quality, configuration.audio_bit_rate, input_media_types) };
+		auto sink_writer_with_indices{ make_initialized_sink_writer(oip, output_video_format, configuration.video_quality, configuration.audio_bit_rate, input_media_types) };
+		if (!sink_writer_with_indices) return unexpected{ sink_writer_with_indices.error() };
+
+		auto const [sink_writer, indices] { *sink_writer_with_indices };
 		auto const [video_index, audio_index] { indices };
 
 		oip.func_set_buffer_size(8, 8);
+
 		aviutl_logger->info(aviutl_logger, L"Sending video samples to the writer...");
+
+		uint32_t d3d_resource_version{};
+		auto const is_accelerated{ SUCCEEDED(input_media_types.first->GetUINT32(MF_MT_D3D_RESOURCE_VERSION, &d3d_resource_version)) };
+
+		auto const video_time_stamp{ convert_frame_rate_to_average_time_per_frame(*input_media_types.first) };
+
 		for (auto f{ 0 }; f < oip.n; ++f)
-			if ((hr = write_video_sample(oip, *sink_writer, f, video_index, *input_media_types.first)) < 0)
-				return unexpected{ hr };
+			if ((hr = write_video_sample(oip, *sink_writer, f, video_index, *input_media_types.first, is_accelerated, video_time_stamp)) < 0)
+				return unexpected{ error{ hr, "write_video_sample" } };
+
 		aviutl_logger->info(aviutl_logger, L"Sending audio samples to the writer...");
+
+		auto const audio_max_samples{ static_cast<int32_t>(get_pcm_block_alignment(oip.audio_ch, audio_bits_per_sample) * oip.audio_rate) };
+
 		for (auto n{ 0 }; n < oip.audio_n; n += oip.audio_rate)
-			if ((hr = write_audio_sample(oip, *sink_writer, n, audio_index, *input_media_types.second)) < 0)
-				return unexpected{ hr };
+			if ((hr = write_audio_sample(oip, *sink_writer, n, audio_index, *input_media_types.second, audio_max_samples)) < 0)
+				return unexpected{ error{ hr, "write_audio_sample" } };
 
 		aviutl_logger->info(aviutl_logger, L"Finalizing. It may take a while...");
 		if ((hr = sink_writer->Finalize()) < 0)
-			return unexpected{ hr };
+			return unexpected{ error{ hr, "Finalize" } };
 
 		return S_OK;
 	}
