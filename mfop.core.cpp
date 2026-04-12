@@ -55,15 +55,6 @@ static LOG_HANDLE *aviutl_logger;
 namespace mfop
 {
 	auto const constinit audio_bits_per_sample{ 16 };
-	auto const constinit d3d_feature_levels{ to_array({
-		D3D_FEATURE_LEVEL_11_1,
-		D3D_FEATURE_LEVEL_11_0,
-		D3D_FEATURE_LEVEL_10_1,
-		D3D_FEATURE_LEVEL_10_0,
-		D3D_FEATURE_LEVEL_9_3,
-		D3D_FEATURE_LEVEL_9_2,
-		D3D_FEATURE_LEVEL_9_1
-	}) };
 
 	using nv12_ptr = unique_ptr<uint8_t[]>;
 	using resolution_t = pair<int32_t const, int32_t const>;
@@ -71,15 +62,14 @@ namespace mfop
 	using stream_indices_t = pair<DWORD const, DWORD const>;
 	using IMFMediaTypes = pair<com_ptr<IMFMediaType>, com_ptr<IMFMediaType>>;
 	using sink_writer_with_indices_t = pair<com_ptr<IMFSinkWriter>, stream_indices_t const>;
-	template<typename Expected> using expected_win32 = expected<Expected, HRESULT>;
 
-	auto yuy2_to_nv12(span<uint8_t> yuy2, resolution_t &&resolution)
+	auto yuy2_to_nv12(uint8_t const yuy2[], resolution_t &&resolution)
 	{
 		__assume(resolution.first % 2 == 0 && resolution.second % 2 == 0);
 
 		auto const [width, height] { resolution };
 
-		nv12_ptr output{ make_unique_for_overwrite<uint8_t[]>(static_cast<size_t>(3 * width * height) / 2) };
+		nv12_ptr output{ std::make_unique_for_overwrite<uint8_t[]>(width * (static_cast<size_t>(height / 2) + height)) };
 
 		auto const stride{ width * 2 };
 		auto const image_size{ static_cast<size_t>(width * height) };
@@ -87,14 +77,14 @@ namespace mfop
 #pragma omp parallel
 		{
 #pragma omp for nowait
-			for (auto i{ 0 }; i < yuy2.size_bytes(); i += 2)
+			for (auto i{ 0 }; i < stride * height; i += 2)
 				_mm256_store_si256
 				(
 					reinterpret_cast<__m256i *>(&output[i / 2]),
 					_mm256_load_si256(reinterpret_cast<__m256i const *>(&yuy2[i]))
 				);
 
-			for (auto current_height{ 0uz }; current_height < height; current_height += 2)
+			for (size_t current_height{ 0 }; current_height < height; current_height += 2)
 #pragma omp for nowait
 				for (auto i{ 0 }; i < stride; i += 4)
 					_mm256_store_si256(reinterpret_cast<__m256i *>(&output[image_size + (width * current_height / 2) + 0]), _mm256_load_si256(reinterpret_cast<__m256i const *>(&yuy2[stride * current_height + i + 1]))),
@@ -102,12 +92,6 @@ namespace mfop
 		}
 
 		return output;
-	}
-
-	template<typename D3D12DeviceVersion = ID3D12Device>
-	auto is_dx12_available(D3D_FEATURE_LEVEL &&minimum_feature_level = D3D_FEATURE_LEVEL_11_1) noexcept
-	{
-		return SUCCEEDED(D3D12CreateDevice(nullptr, minimum_feature_level, __uuidof(D3D12DeviceVersion), nullptr));
 	}
 
 	auto constexpr get_pcm_block_alignment(int32_t const &audio_ch, uint32_t &&bit) noexcept
@@ -191,12 +175,11 @@ namespace mfop
 		input_video_media_type->SetUINT32(MF_MT_DEFAULT_STRIDE, default_stride);
 		input_video_media_type->SetUINT32(MF_MT_SAMPLE_SIZE, image_size);
 		input_video_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true);
-		//input_video_media_type->SetUINT32(MF_MT_FIXED_SIZE_SAMPLES, true);
 		MFSetAttributeSize(input_video_media_type.get(), MF_MT_FRAME_SIZE, width, height);
 		MFSetAttributeRatio(input_video_media_type.get(), MF_MT_FRAME_RATE, rate, scale);
 		MFSetAttributeRatio(input_video_media_type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
 
-		if (is_accelerated) input_video_media_type->SetUINT32(MF_MT_D3D_RESOURCE_VERSION, is_dx12_available() ? MF_D3D12_RESOURCE : MF_D3D11_RESOURCE);
+		if (is_accelerated) input_video_media_type->SetUINT32(MF_MT_D3D_RESOURCE_VERSION, MF_D3D11_RESOURCE);
 
 		return input_video_media_type;
 	}
@@ -243,43 +226,45 @@ namespace mfop
 		return S_OK;
 	}
 
-	auto make_dxgi_device_manager_ptr(uint32_t const &d3d_resource_version = MF_D3D11_RESOURCE)
+	expected<com_ptr_nothrow<IMFDXGIDeviceManager>, error> make_dxgi_device_manager_ptr() noexcept
 	{
-		aviutl_logger->info(aviutl_logger, L"Preparing DirectX Video Acceleration...");
-		com_ptr<IUnknown> directx_device{};
-		switch (d3d_resource_version)
+		static auto const constinit d3d_feature_levels{ to_array(
 		{
-		default:
-		case MF_D3D11_RESOURCE:
-			THROW_IF_FAILED(D3D11CreateDevice
-			(
-				nullptr,
-				D3D_DRIVER_TYPE_HARDWARE,
-				nullptr,
-				D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
-				d3d_feature_levels.data(),
-				static_cast<uint32_t>(d3d_feature_levels.size()),
-				D3D11_SDK_VERSION,
-				reinterpret_cast<ID3D11Device **>(&directx_device),
-				nullptr,
-				nullptr
-			));
-			break;
+			D3D_FEATURE_LEVEL_11_1,
+			D3D_FEATURE_LEVEL_11_0,
+			D3D_FEATURE_LEVEL_10_1,
+			D3D_FEATURE_LEVEL_10_0,
+			D3D_FEATURE_LEVEL_9_3,
+			D3D_FEATURE_LEVEL_9_2,
+			D3D_FEATURE_LEVEL_9_1
+		}) };
 
-		case MF_D3D12_RESOURCE:
-			aviutl_logger->info(aviutl_logger, L"DirectX 12 is available so going to be used.");
-			THROW_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, __uuidof(ID3D12Device), out_ptr(directx_device)));
-			break;
-		}
+		aviutl_logger->info(aviutl_logger, L"Preparing DirectX Video Acceleration...");
+		com_ptr_nothrow<ID3D11Device> directx_device{};
+
+		UNEXPECT_IF_FAILED(D3D11CreateDevice
+		(
+			nullptr,
+			D3D_DRIVER_TYPE_HARDWARE,
+			nullptr,
+			D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+			d3d_feature_levels.data(),
+			static_cast<uint32_t>(d3d_feature_levels.size()),
+			D3D11_SDK_VERSION,
+			&directx_device,
+			nullptr,
+			nullptr
+		));
+
 		com_ptr_nothrow<IMFDXGIDeviceManager> dxgi_device_manager{};
 		uint32_t reset_token{};
-		THROW_IF_FAILED(MFCreateDXGIDeviceManager(&reset_token, out_ptr(dxgi_device_manager)));
-		THROW_IF_FAILED(dxgi_device_manager->ResetDevice(directx_device.get(), reset_token));
+		MFCreateDXGIDeviceManager(&reset_token, out_ptr(dxgi_device_manager));
+		UNEXPECT_IF_FAILED(dxgi_device_manager->ResetDevice(directx_device.get(), reset_token));
 
 		return dxgi_device_manager;
 	}
 
-	[[nodiscard]] expected<com_ptr_nothrow<IMFSinkWriter>, error> make_sink_writer(wstring_view output_name, IMFAttributes &media_type, GUID const &output_video_format) noexcept
+	expected<com_ptr_nothrow<IMFSinkWriter>, error> make_sink_writer(wstring_view output_name, IMFAttributes &media_type, GUID const &output_video_format) noexcept
 	{
 		auto sink_writer_attributes{ com_ptr_nothrow<IMFAttributes>{} };
 		MFCreateAttributes(out_ptr(sink_writer_attributes), 3);
@@ -295,15 +280,11 @@ namespace mfop
 		uint32_t d3d_resource_version{};
 		if (SUCCEEDED(media_type.GetUINT32(MF_MT_D3D_RESOURCE_VERSION, &d3d_resource_version)))
 		{
-			try
-			{
-				THROW_IF_FAILED(sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true));
-				THROW_IF_FAILED(sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, make_dxgi_device_manager_ptr(d3d_resource_version).get()));
-			}
-			catch (exception const &)
-			{
-				aviutl_logger->warn(aviutl_logger, L"Failed to initialize hardware acceleration. Falling back to software encoding.");
-			}
+			auto const d3d_manager{ make_dxgi_device_manager_ptr() };
+			if (!d3d_manager) return unexpected{ d3d_manager.error() };
+
+			sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true);
+			sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, d3d_manager->get());
 		}
 
 		auto sink_writer{ com_ptr_nothrow<IMFSinkWriter>{} };
@@ -312,7 +293,7 @@ namespace mfop
 		return sink_writer;
 	}
 
-	[[nodiscard]] expected<DWORD, error> configure_video_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
+	expected<DWORD, error> configure_video_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		uint32_t width, height;
 		MFGetAttributeSize(&input_media_type, MF_MT_FRAME_SIZE, &width, &height);
@@ -350,7 +331,7 @@ namespace mfop
 		return video_index;
 	}
 
-	[[nodiscard]] expected<DWORD, error> configure_audio_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, uint32_t const &output_bit_rate, GUID const &output_video_format) noexcept
+	expected<DWORD, error> configure_audio_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, uint32_t const &output_bit_rate, GUID const &output_video_format) noexcept
 	{
 		__assume(output_bit_rate <= 3);
 
@@ -464,7 +445,7 @@ namespace mfop
 
 		auto const frame_image{ static_cast<uint8_t *>(oip.func_get_video(f, FCC('YUY2'))) };
 
-		auto video_buffer{ com_ptr_nothrow<IMFMediaBuffer>{} };
+		com_ptr_nothrow<IMFMediaBuffer> video_buffer{};
 		RETURN_IF_FAILED(MFCreateMediaBufferFromMediaType(&input_media_type, time_stamp, 0, 0, out_ptr(video_buffer)));
 
 		com_ptr_nothrow<IMF2DBuffer2> video_2d_buffer{};
@@ -475,7 +456,7 @@ namespace mfop
 		uint8_t *buffer_begin{};
 		DWORD buffer_size{};
 		video_2d_buffer->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_begin, &buffer_size);
-		RETURN_IF_FAILED(MFCopyImage(scanline, stride, is_accelerated ? yuy2_to_nv12(span{ frame_image, buffer_size }, { oip.w, oip.h }).get() : frame_image, stride, stride, oip.h));
+		RETURN_IF_FAILED(MFCopyImage(scanline, stride, is_accelerated ? yuy2_to_nv12(frame_image, { oip.w, oip.h }).get() : frame_image, stride, stride, oip.h));
 		video_2d_buffer->Unlock2D();
 
 		DWORD contiguous_length{};
@@ -500,7 +481,7 @@ namespace mfop
 		auto const sample_duration{ static_cast<int64_t>(actual_samples) * 10'000'000LL / max_samples };
 		auto const sample_time{ static_cast<int64_t>(n) * 10'000'000LL / oip.audio_rate };
 
-		auto audio_buffer{ wil::com_ptr_nothrow<IMFMediaBuffer>{} };
+		com_ptr_nothrow<IMFMediaBuffer> audio_buffer{};
 		RETURN_IF_FAILED(MFCreateMediaBufferFromMediaType(&input_media_type, sample_duration, static_cast<DWORD>(actual_samples), 0, out_ptr(audio_buffer)));
 
 		uint8_t *media_data{};

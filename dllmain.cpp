@@ -16,11 +16,11 @@ import mfop;
 
 static LOG_HANDLE *aviutl_logger;
 
-auto string_to_wstring(std::string const &str)
+auto string_to_wstring(std::string_view str)
 {
-	auto const required_size{ static_cast<std::size_t>(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, str.c_str(), static_cast<std::int32_t>(str.size()), nullptr, 0)) };
+	auto const required_size{ static_cast<std::size_t>(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, str.data(), static_cast<std::int32_t>(str.size()), nullptr, 0)) };
 	std::wstring wstr(required_size, L'\0');
-	MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, str.c_str(), static_cast<std::int32_t>(str.size()), &wstr.front(), static_cast<std::int32_t>(required_size));
+	MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, str.data(), static_cast<std::int32_t>(str.size()), &wstr.front(), static_cast<std::int32_t>(required_size));
 	return wstr;
 }
 
@@ -43,7 +43,7 @@ auto func_output(OUTPUT_INFO *oip) noexcept
 
 	if (!result)
 	{
-		aviutl_logger->error(aviutl_logger, std::format(L"FAILED TO OUTPUT: {} (0x800{:x}{:04x}, in {})", string_to_wstring(std::system_category().message(result.error().code)), HRESULT_FACILITY(result.error().code), HRESULT_CODE(result.error().code), string_to_wstring(result.error().where)).c_str());
+		aviutl_logger->error(aviutl_logger, std::format(L"FAILED TO OUTPUT: {} (0x800{:x}{:04x}) in {}", string_to_wstring(std::system_category().message(result.error().code)), HRESULT_FACILITY(result.error().code), HRESULT_CODE(result.error().code), string_to_wstring(result.error().where)).c_str());
 		return false;
 	}
 
