@@ -83,66 +83,66 @@ namespace mfop
 			return false;
 		}
 
+		auto on_init_dialog(HWND dialog, HWND, intptr_t)
+		{
+			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"H.264");
+			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"HEVC");
+
+			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"96");
+			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"128");
+			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"160");
+			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"192");
+
+			ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get<is_hevc_preferable>());
+
+			THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get<video_quality>()).c_str()));
+			ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get<audio_bit_rate>());
+
+			Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get<is_accelerated>());
+
+			return false;
+		}
+
+		auto on_command(HWND dialog, int id, HWND, uint32_t)
+		{
+			switch (id)
+			{
+			case IDNO:
+				if (MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO | MB_ICONWARNING) == IDYES)
+				{
+					ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get_default<is_hevc_preferable>());
+					THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).c_str()));
+					ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get_default<audio_bit_rate>());
+					Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get_default<is_accelerated>());
+				}
+				break;
+			case IDOK:
+				set<is_hevc_preferable>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO2)));
+				set<video_quality>(std::min(100u, std::max(1u, GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false))));
+
+				set<audio_bit_rate>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO1)));
+				set<is_accelerated>(Button_GetCheck(GetDlgItem(dialog, IDC_CHECK1)));
+				THROW_IF_WIN32_BOOL_FALSE(EndDialog(dialog, IDOK));
+				break;
+			case IDCANCEL:
+				THROW_IF_WIN32_BOOL_FALSE(EndDialog(dialog, IDCANCEL));
+				break;
+			}
+		}
+
 		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t w_param, [[maybe_unused]] intptr_t l_param)
 		{
-			static wchar_t constinit quality_wchar{};
-
-			auto const get_handle{ [&dialog](int32_t &&id) noexcept
-			{
-				return GetDlgItem(dialog, id);
-			} };
-
 			switch (message)
 			{
 			case WM_INITDIALOG:
-				ComboBox_AddString(get_handle(IDC_COMBO2), L"H.264");
-				ComboBox_AddString(get_handle(IDC_COMBO2), L"HEVC");
-
-				ComboBox_AddString(get_handle(IDC_COMBO1), L"96");
-				ComboBox_AddString(get_handle(IDC_COMBO1), L"128");
-				ComboBox_AddString(get_handle(IDC_COMBO1), L"160");
-				ComboBox_AddString(get_handle(IDC_COMBO1), L"192");
-
-				ComboBox_SetCurSel(get_handle(IDC_COMBO2), get<is_hevc_preferable>());
-
-				THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get<video_quality>()).c_str()));
-				ComboBox_SetCurSel(get_handle(IDC_COMBO1), get<audio_bit_rate>());
-
-				Button_SetCheck(get_handle(IDC_CHECK1), get<is_accelerated>());
-
-				return false;
+				return SetDlgMsgResult(dialog, WM_INITDIALOG, HANDLE_WM_INITDIALOG(dialog, w_param, l_param, on_init_dialog));
 			case WM_COMMAND:
-				switch (GET_WM_COMMAND_ID(w_param, l_param))
-				{
-				case IDNO:
-					if (MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO | MB_ICONWARNING) == IDYES)
-					{
-						ComboBox_SetCurSel(get_handle(IDC_COMBO2), get_default<is_hevc_preferable>());
-						THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).c_str()));
-						ComboBox_SetCurSel(get_handle(IDC_COMBO1), get_default<audio_bit_rate>());
-						Button_SetCheck(get_handle(IDC_CHECK1), get_default<is_accelerated>());
-					}
-					return false;
-				case IDOK:
-					set<is_hevc_preferable>(ComboBox_GetCurSel(get_handle(IDC_COMBO2)));
-
-					set<video_quality>(std::min(100u, std::max(1u, GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false))));
-
-					set<audio_bit_rate>(ComboBox_GetCurSel(get_handle(IDC_COMBO1)));
-					set<is_accelerated>(Button_GetCheck(get_handle(IDC_CHECK1)));
-
-					THROW_IF_WIN32_BOOL_FALSE(EndDialog(dialog, IDOK));
-					return true;
-				case IDCANCEL:
-					THROW_IF_WIN32_BOOL_FALSE(EndDialog(dialog, IDCANCEL));
-					return true;
-				default:
-					return false;
-				}
+				return SetDlgMsgResult(dialog, WM_COMMAND, HANDLE_WM_COMMAND(dialog, w_param, l_param, on_command));
 			default:
 				return false;
 			}
 		}
+
 		auto open_dialog(HWND &window, HINSTANCE &instance) -> void
 		{
 			DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
