@@ -83,7 +83,7 @@ namespace mfop
 			return false;
 		}
 
-		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t w_param, intptr_t)
+		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t w_param, [[maybe_unused]] intptr_t l_param)
 		{
 			static wchar_t constinit quality_wchar{};
 
@@ -112,7 +112,7 @@ namespace mfop
 
 				return false;
 			case WM_COMMAND:
-				switch (LOWORD(w_param))
+				switch (GET_WM_COMMAND_ID(w_param, l_param))
 				{
 				case IDNO:
 					if (MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO | MB_ICONWARNING) == IDYES)

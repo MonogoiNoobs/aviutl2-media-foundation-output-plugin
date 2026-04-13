@@ -28,7 +28,8 @@ module;
 
 #pragma warning(default: 4557 5266)
 
-#define UNEXPECT_IF_FAILED(hr) do { \
+#define UNEXPECT_IF_FAILED(hr) do \
+{ \
 	HRESULT const __mfop_cond{ hr }; \
 	if (FAILED(__mfop_cond)) \
 	{ \
@@ -69,7 +70,7 @@ namespace mfop
 
 		auto const [width, height] { resolution };
 
-		nv12_ptr output{ std::make_unique_for_overwrite<uint8_t[]>(width * (static_cast<size_t>(height / 2) + height)) };
+		nv12_ptr output{ make_unique_for_overwrite<uint8_t[]>(width * (static_cast<size_t>(height / 2) + height)) };
 
 		auto const stride{ width * 2 };
 		auto const image_size{ static_cast<size_t>(width * height) };
@@ -226,7 +227,7 @@ namespace mfop
 		return S_OK;
 	}
 
-	expected<com_ptr_nothrow<IMFDXGIDeviceManager>, error> make_dxgi_device_manager_ptr() noexcept
+	expected<com_ptr_nothrow<IMFDXGIDeviceManager>, error> make_dxgi_device_manager() noexcept
 	{
 		static auto const constinit d3d_feature_levels{ to_array(
 		{
@@ -279,13 +280,11 @@ namespace mfop
 
 		uint32_t d3d_resource_version{};
 		if (SUCCEEDED(media_type.GetUINT32(MF_MT_D3D_RESOURCE_VERSION, &d3d_resource_version)))
-		{
-			auto const d3d_manager{ make_dxgi_device_manager_ptr() };
-			if (!d3d_manager) return unexpected{ d3d_manager.error() };
-
-			sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true);
-			sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, d3d_manager->get());
-		}
+			if (auto const d3d_manager{ make_dxgi_device_manager() })
+			{
+				sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true);
+				sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, d3d_manager->get());
+			}
 
 		auto sink_writer{ com_ptr_nothrow<IMFSinkWriter>{} };
 		UNEXPECT_IF_FAILED(MFCreateSinkWriterFromURL(output_name.data(), nullptr, sink_writer_attributes.get(), out_ptr(sink_writer)));
