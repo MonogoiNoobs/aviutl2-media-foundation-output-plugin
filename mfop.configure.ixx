@@ -21,7 +21,7 @@ namespace mfop
 	{
 		export
 		{
-			auto open_dialog(HWND &window, HINSTANCE &instance) -> void;
+			void open_dialog(HWND &window, HINSTANCE &instance);
 
 			enum struct video_quality : std::uint32_t {};
 			enum struct audio_bit_rate : std::uint32_t {};

@@ -14,6 +14,9 @@ module;
 #include <wil/com.h>
 #include "resource.h"
 
+#define HANDLE_DIALOG_MSG(hwnd, message, fn) \
+	case (message): return SetDlgMsgResult(dialog, message, HANDLE_##message((hwnd), (wParam), (lParam), (fn)))
+
 module mfop.configure;
 
 import std;
@@ -48,7 +51,7 @@ namespace mfop
 			if (is_same<Key, is_hevc_preferable>::value)
 				return FALSE;
 
-			throw invalid_argument{ "Unknown key" };
+			throw invalid_argument{ L"Unknown key" };
 		}
 
 		template<typename Key>
@@ -64,7 +67,7 @@ namespace mfop
 			if (is_same<Key, is_hevc_preferable>::value)
 				return GetPrivateProfileIntW(L"mp4", L"videoFormat", get_default<Key>(), configuration_ini_path) == TRUE;
 
-			throw invalid_argument{ "Unknown key" };
+			throw invalid_argument{ L"Unknown key" };
 		}
 
 		template<typename Key>
@@ -103,7 +106,7 @@ namespace mfop
 			return false;
 		}
 
-		auto on_command(HWND dialog, int id, HWND, uint32_t)
+		auto on_command(HWND dialog, int32_t id, HWND, uint32_t)
 		{
 			switch (id)
 			{
@@ -122,28 +125,27 @@ namespace mfop
 
 				set<audio_bit_rate>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO1)));
 				set<is_accelerated>(Button_GetCheck(GetDlgItem(dialog, IDC_CHECK1)));
-				THROW_IF_WIN32_BOOL_FALSE(EndDialog(dialog, IDOK));
+				EndDialog(dialog, IDOK);
 				break;
 			case IDCANCEL:
-				THROW_IF_WIN32_BOOL_FALSE(EndDialog(dialog, IDCANCEL));
+				EndDialog(dialog, IDCANCEL);
 				break;
 			}
 		}
 
-		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t w_param, [[maybe_unused]] intptr_t l_param)
+		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t wParam, [[maybe_unused]] intptr_t lParam)
 		{
 			switch (message)
 			{
-			case WM_INITDIALOG:
-				return SetDlgMsgResult(dialog, WM_INITDIALOG, HANDLE_WM_INITDIALOG(dialog, w_param, l_param, on_init_dialog));
-			case WM_COMMAND:
-				return SetDlgMsgResult(dialog, WM_COMMAND, HANDLE_WM_COMMAND(dialog, w_param, l_param, on_command));
+				HANDLE_DIALOG_MSG(dialog, WM_INITDIALOG, on_init_dialog);
+				HANDLE_DIALOG_MSG(dialog, WM_COMMAND, on_command);
+
 			default:
 				return false;
 			}
 		}
 
-		auto open_dialog(HWND &window, HINSTANCE &instance) -> void
+		void open_dialog(HWND &window, HINSTANCE &instance)
 		{
 			DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
 		}
