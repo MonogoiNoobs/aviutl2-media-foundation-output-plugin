@@ -43,7 +43,7 @@ auto func_output(OUTPUT_INFO *oip) noexcept
 
 	if (!result)
 	{
-		aviutl_logger->error(aviutl_logger, std::format(L"FAILED TO OUTPUT: {} (0x800{:x}{:04x}) in {}", string_to_wstring(std::system_category().message(result.error().code)), HRESULT_FACILITY(result.error().code), HRESULT_CODE(result.error().code), string_to_wstring(result.error().where)).c_str());
+		aviutl_logger->error(aviutl_logger, std::format(L"FAILED TO OUTPUT: {} (0x800{:x}{:04x}) in {}.", string_to_wstring(std::system_category().message(result.error().code)), HRESULT_FACILITY(result.error().code), HRESULT_CODE(result.error().code), string_to_wstring(result.error().where)).c_str());
 		return false;
 	}
 

@@ -28,21 +28,7 @@ module;
 
 #pragma warning(default: 4557 5266)
 
-#define UNEXPECT_IF_FAILED(hr) do \
-{ \
-	HRESULT const __mfop_cond{ hr }; \
-	if (FAILED(__mfop_cond)) \
-	{ \
-		return std::unexpected \
-		{ \
-			mfop::error \
-			{ \
-				.code = __mfop_cond, \
-				.where = __func__ \
-			} \
-		}; \
-	} \
-} while (0)
+#define UNEXPECT_IF_FAILED(hr) if (HRESULT const __mfop_hr{ hr }) if (FAILED(__mfop_hr)) return std::unexpected{ mfop::error{ __mfop_hr, #hr } }
 
 module mfop.core;
 
@@ -70,10 +56,10 @@ namespace mfop
 
 		auto const [width, height] { resolution };
 
-		nv12_ptr output{ make_unique_for_overwrite<uint8_t[]>(width * (static_cast<size_t>(height / 2) + height)) };
-
-		auto const stride{ width * 2 };
 		auto const image_size{ static_cast<size_t>(width * height) };
+		auto const stride{ width * 2 };
+
+		nv12_ptr output{ make_unique_for_overwrite<uint8_t[]>(image_size * 3 / 2) };
 
 #pragma omp parallel
 		{
@@ -185,7 +171,7 @@ namespace mfop
 		return input_video_media_type;
 	}
 
-	auto make_input_audio_media_type(int32_t const &channel_count, int32_t const &sampling_rate, GUID const &output_video_format)
+	auto make_input_audio_media_type(int32_t const &channel_count, int32_t const &sampling_rate, GUID const &output_video_format) noexcept
 	{
 		com_ptr_nothrow<IMFMediaType> input_audio_media_type{};
 		MFCreateMediaType(out_ptr(input_audio_media_type));
@@ -505,8 +491,6 @@ namespace mfop
 
 	expected<HRESULT, error> output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
 	{
-		auto hr{ S_OK };
-
 		auto const com_cleanup{ CoInitializeEx_failfast() };
 		auto const mf_cleanup{ MFStartup() };
 
@@ -520,7 +504,6 @@ namespace mfop
 		if (!sink_writer_with_indices) return unexpected{ sink_writer_with_indices.error() };
 
 		auto const [sink_writer, indices] { *sink_writer_with_indices };
-		auto const [video_index, audio_index] { indices };
 
 		oip.func_set_buffer_size(8, 8);
 
@@ -531,21 +514,25 @@ namespace mfop
 
 		auto const video_time_stamp{ convert_frame_rate_to_average_time_per_frame(*input_media_types.first) };
 
+		auto aeternum{ S_OK };
+
 		for (auto f{ 0 }; f < oip.n; ++f)
-			if ((hr = write_video_sample(oip, *sink_writer, f, video_index, *input_media_types.first, is_accelerated, video_time_stamp)) < 0)
-				return unexpected{ error{ hr, "write_video_sample" } };
+			if ((aeternum = write_video_sample(oip, *sink_writer, f, indices.first, *input_media_types.first, is_accelerated, video_time_stamp)) < 0)
+				goto abort;
+		{
+			aviutl_logger->info(aviutl_logger, L"Sending audio samples to the writer...");
 
-		aviutl_logger->info(aviutl_logger, L"Sending audio samples to the writer...");
+			auto const audio_max_samples{ static_cast<int32_t>(get_pcm_block_alignment(oip.audio_ch, audio_bits_per_sample) * oip.audio_rate) };
 
-		auto const audio_max_samples{ static_cast<int32_t>(get_pcm_block_alignment(oip.audio_ch, audio_bits_per_sample) * oip.audio_rate) };
+			for (auto n{ 0 }; n < oip.audio_n; n += oip.audio_rate)
+				if ((aeternum = write_audio_sample(oip, *sink_writer, n, indices.second, *input_media_types.second, audio_max_samples)) < 0)
+					break;
+		}
+	abort:
+		aviutl_logger->info(aviutl_logger, SUCCEEDED(aeternum) ? L"Finalizing. It may take a while..." : L"Aborting...");
+		UNEXPECT_IF_FAILED(sink_writer->Finalize());
 
-		for (auto n{ 0 }; n < oip.audio_n; n += oip.audio_rate)
-			if ((hr = write_audio_sample(oip, *sink_writer, n, audio_index, *input_media_types.second, audio_max_samples)) < 0)
-				return unexpected{ error{ hr, "write_audio_sample" } };
-
-		aviutl_logger->info(aviutl_logger, L"Finalizing. It may take a while...");
-		if ((hr = sink_writer->Finalize()) < 0)
-			return unexpected{ error{ hr, "Finalize" } };
+		UNEXPECT_IF_FAILED(aeternum);
 
 		return S_OK;
 	}

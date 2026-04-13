@@ -51,7 +51,7 @@ namespace mfop
 			if (is_same<Key, is_hevc_preferable>::value)
 				return FALSE;
 
-			throw invalid_argument{ L"Unknown key" };
+			throw invalid_argument{ "Unknown key" };
 		}
 
 		template<typename Key>
@@ -67,7 +67,7 @@ namespace mfop
 			if (is_same<Key, is_hevc_preferable>::value)
 				return GetPrivateProfileIntW(L"mp4", L"videoFormat", get_default<Key>(), configuration_ini_path) == TRUE;
 
-			throw invalid_argument{ L"Unknown key" };
+			throw invalid_argument{ "Unknown key" };
 		}
 
 		template<typename Key>
@@ -125,10 +125,9 @@ namespace mfop
 
 				set<audio_bit_rate>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO1)));
 				set<is_accelerated>(Button_GetCheck(GetDlgItem(dialog, IDC_CHECK1)));
-				EndDialog(dialog, IDOK);
-				break;
+				[[fallthrough]];
 			case IDCANCEL:
-				EndDialog(dialog, IDCANCEL);
+				EndDialog(dialog, id);
 				break;
 			}
 		}
