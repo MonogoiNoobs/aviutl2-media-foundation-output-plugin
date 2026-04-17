@@ -39,7 +39,7 @@ namespace mfop
 		};
 
 		template<typename Key>
-		int32_t consteval get_default()
+		int32_t consteval get_default() noexcept
 		{
 			if (is_same<Key, video_quality>::value)
 				return 70;
@@ -51,11 +51,11 @@ namespace mfop
 			if (is_same<Key, is_hevc_preferable>::value)
 				return FALSE;
 
-			throw invalid_argument{ "Unknown key" };
+			unreachable();
 		}
 
 		template<typename Key>
-		underlying_type<Key>::type get()
+		underlying_type<Key>::type get() noexcept
 		{
 			if (is_same<Key, video_quality>::value)
 				return GetPrivateProfileIntW(L"general", L"videoQuality", get_default<Key>(), configuration_ini_path);
@@ -67,7 +67,7 @@ namespace mfop
 			if (is_same<Key, is_hevc_preferable>::value)
 				return GetPrivateProfileIntW(L"mp4", L"videoFormat", get_default<Key>(), configuration_ini_path) == TRUE;
 
-			throw invalid_argument{ "Unknown key" };
+			unreachable();
 		}
 
 		template<typename Key>
@@ -86,7 +86,7 @@ namespace mfop
 			return false;
 		}
 
-		auto on_init_dialog(HWND dialog, HWND, intptr_t)
+		auto on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
 		{
 			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"H.264");
 			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"HEVC");
@@ -98,7 +98,7 @@ namespace mfop
 
 			ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get<is_hevc_preferable>());
 
-			THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get<video_quality>()).c_str()));
+			SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get<video_quality>()).c_str());
 			ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get<audio_bit_rate>());
 
 			Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get<is_accelerated>());
@@ -106,7 +106,7 @@ namespace mfop
 			return false;
 		}
 
-		auto on_command(HWND dialog, int32_t id, HWND, uint32_t)
+		auto on_command(HWND dialog, int32_t id, HWND, uint32_t) noexcept
 		{
 			switch (id)
 			{
@@ -114,7 +114,7 @@ namespace mfop
 				if (MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO | MB_ICONWARNING) == IDYES)
 				{
 					ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get_default<is_hevc_preferable>());
-					THROW_IF_WIN32_BOOL_FALSE(SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).c_str()));
+					SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).c_str());
 					ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get_default<audio_bit_rate>());
 					Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get_default<is_accelerated>());
 				}
@@ -132,7 +132,7 @@ namespace mfop
 			}
 		}
 
-		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t wParam, [[maybe_unused]] intptr_t lParam)
+		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t wParam, [[maybe_unused]] intptr_t lParam) noexcept
 		{
 			switch (message)
 			{
@@ -144,7 +144,7 @@ namespace mfop
 			}
 		}
 
-		void open_dialog(HWND &window, HINSTANCE &instance)
+		void open_dialog(HWND &window, HINSTANCE &instance) noexcept
 		{
 			DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
 		}
