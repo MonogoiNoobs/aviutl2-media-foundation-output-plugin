@@ -47,8 +47,8 @@ namespace mfop
 	using resolution_t = pair<int32_t const, int32_t const>;
 	using fps_t = pair<int32_t const, int32_t const>;
 	using stream_indices_t = pair<DWORD const, DWORD const>;
-	using IMFMediaTypes = pair<com_ptr<IMFMediaType>, com_ptr<IMFMediaType>>;
-	using sink_writer_with_indices_t = pair<com_ptr<IMFSinkWriter>, stream_indices_t const>;
+	using IMFMediaTypes = pair<com_ptr_nothrow<IMFMediaType>, com_ptr_nothrow<IMFMediaType>>;
+	using sink_writer_with_indices_t = pair<com_ptr_nothrow<IMFSinkWriter>, stream_indices_t const>;
 
 	auto yuy2_to_nv12(uint8_t const yuy2[], resolution_t &&resolution)
 	{
