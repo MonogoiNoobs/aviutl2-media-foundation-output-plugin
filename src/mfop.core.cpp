@@ -28,7 +28,7 @@ module;
 
 #pragma warning(default: 4557 5266)
 
-#define UNEXPECT_IF_FAILED(hr) if (HRESULT const __mfop_hr{ hr }) if (FAILED(__mfop_hr)) return std::unexpected{ mfop::error{ __mfop_hr, #hr } }
+#define UNEXPECT_IF_FAILED(hr) if (HRESULT const __mfop_hr{ hr }) if (FAILED(__mfop_hr)) [[unlikely]] return std::unexpected{ mfop::error{ __mfop_hr, #hr } }
 
 module mfop.core;
 
@@ -384,28 +384,28 @@ namespace mfop
 	expected<DWORD, error> configure_video_stream(IMFSinkWriter &sink_writer, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		auto const index{ configure_video_output(sink_writer, input_media_type, output_video_format) };
-		if (!index) return unexpected{ index.error() };
+		if (!index) [[unlikely]] return unexpected{ index.error() };
 		auto const result{ configure_video_input(sink_writer, *index, quality, output_video_format, input_media_type) };
-		if (!result) return unexpected{ result.error() };
+		if (!result) [[unlikely]] return unexpected{ result.error() };
 		return *index;
 	}
 
 	expected<DWORD, error> configure_audio_stream(IMFSinkWriter &sink_writer, int32_t const &output_bit_rate, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		auto const index{ configure_audio_output(sink_writer, input_media_type, output_bit_rate, output_video_format) };
-		if (!index) return unexpected{ index.error() };
+		if (!index) [[unlikely]] return unexpected{ index.error() };
 		auto const result{ configure_audio_input(sink_writer, *index, quality, output_video_format, input_media_type) };
-		if (!result) return unexpected{ result.error() };
+		if (!result) [[unlikely]] return unexpected{ result.error() };
 		return *index;
 	}
 
 	expected<stream_indices_t, error> configure_streams(IMFSinkWriter &sink_writer, uint32_t const &quality, uint32_t const &output_bit_rate, IMFMediaTypes const &input_media_types, GUID const &output_video_format) noexcept
 	{
 		auto const video_index{ configure_video_stream(sink_writer, quality, *input_media_types.first, output_video_format) };
-		if (!video_index) return unexpected{ video_index.error() };
+		if (!video_index) [[unlikely]] return unexpected{ video_index.error() };
 
 		auto const audio_index{ configure_audio_stream(sink_writer, output_bit_rate, quality, *input_media_types.second, output_video_format) };
-		if (!audio_index) return unexpected{ audio_index.error() };
+		if (!audio_index) [[unlikely]] return unexpected{ audio_index.error() };
 
 		return stream_indices_t{ move(*video_index), move(*audio_index) };
 	}
@@ -413,9 +413,9 @@ namespace mfop
 	expected<sink_writer_with_indices_t, error> make_initialized_sink_writer(OUTPUT_INFO const &oip, GUID const &output_video_format, uint32_t const &video_quality, uint32_t const &audio_bit_rate, IMFMediaTypes const &media_types) noexcept
 	{
 		auto const sink_writer{ make_sink_writer(oip.savefile, *media_types.first, output_video_format) };
-		if (!sink_writer) return unexpected{ sink_writer.error() };
+		if (!sink_writer) [[unlikely]] return unexpected{ sink_writer.error() };
 		auto const indices{ configure_streams(**sink_writer, video_quality, audio_bit_rate, media_types, output_video_format) };
-		if (!indices) return unexpected{ indices.error() };
+		if (!indices) [[unlikely]] return unexpected{ indices.error() };
 
 		UNEXPECT_IF_FAILED((*sink_writer)->BeginWriting());
 
@@ -501,7 +501,7 @@ namespace mfop
 		auto const input_media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
 
 		auto sink_writer_with_indices{ make_initialized_sink_writer(oip, output_video_format, configuration.video_quality, configuration.audio_bit_rate, input_media_types) };
-		if (!sink_writer_with_indices) return unexpected{ sink_writer_with_indices.error() };
+		if (!sink_writer_with_indices) [[unlikely]] return unexpected{ sink_writer_with_indices.error() };
 
 		auto const [sink_writer, indices] { *sink_writer_with_indices };
 
