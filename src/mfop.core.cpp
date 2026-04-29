@@ -59,24 +59,17 @@ namespace mfop
 		auto const image_size{ static_cast<size_t>(width * height) };
 		auto const stride{ width * 2 };
 
-		nv12_ptr output{ make_unique_for_overwrite<uint8_t[]>(image_size * 3 / 2) };
+		auto output{ make_unique_for_overwrite<nv12_ptr::element_type[]>(image_size * 3 / 2) };
 
-#pragma omp parallel
-		{
-#pragma omp for nowait
-			for (auto i{ 0 }; i < stride * height; i += 2)
-				_mm256_store_si256
-				(
-					reinterpret_cast<__m256i *>(&output[i / 2]),
-					_mm256_load_si256(reinterpret_cast<__m256i const *>(&yuy2[i]))
-				);
+		for (auto i{ 0 }; i < stride * height; i += 2)
+			output[i / 2] = yuy2[i];
 
-			for (size_t current_height{ 0 }; current_height < height; current_height += 2)
-#pragma omp for nowait
-				for (auto i{ 0 }; i < stride; i += 4)
-					_mm256_store_si256(reinterpret_cast<__m256i *>(&output[image_size + (width * current_height / 2) + 0]), _mm256_load_si256(reinterpret_cast<__m256i const *>(&yuy2[stride * current_height + i + 1]))),
-					_mm256_store_si256(reinterpret_cast<__m256i *>(&output[image_size + (width * current_height / 2) + 1]), _mm256_load_si256(reinterpret_cast<__m256i const *>(&yuy2[stride * current_height + i + 3])));
-		}
+		for (size_t current_height{ 0 }, position{ image_size }; current_height < height; current_height += 2)
+			for (auto i{ 0 }; i < stride; i += 4)
+			{
+				output[position++] = yuy2[stride * current_height + i + 1];
+				output[position++] = yuy2[stride * current_height + i + 3];
+			}
 
 		return output;
 	}
