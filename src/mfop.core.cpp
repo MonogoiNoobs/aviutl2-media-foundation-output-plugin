@@ -61,14 +61,16 @@ namespace mfop
 
 		auto output{ make_unique_for_overwrite<nv12_ptr::element_type[]>(image_size * 3 / 2) };
 
-		for (auto i{ 0 }; i < stride * height; i += 2)
-			output[i / 2] = yuy2[i];
+		auto y{ output.get() }, uv{ output.get() + image_size };
 
-		for (size_t current_height{ 0 }, position{ image_size }; current_height < height; current_height += 2)
-			for (auto i{ 0 }; i < stride; i += 4)
+		for (auto i{ 0 }; i < stride * height; i += 2)
+			*y++ = yuy2[i];
+
+		for (auto current_height{ 0 }; current_height < height; current_height += 2)
+			for (auto i{ 0 }, current_scanline{ stride * current_height }; i < stride; i += 4)
 			{
-				output[position++] = yuy2[stride * current_height + i + 1];
-				output[position++] = yuy2[stride * current_height + i + 3];
+				*uv++ = yuy2[current_scanline + i + 1];
+				*uv++ = yuy2[current_scanline + i + 3];
 			}
 
 		return output;
@@ -84,7 +86,7 @@ namespace mfop
 		return is_accelerated ? MFVideoFormat_NV12 : MFVideoFormat_YUY2;
 	}
 
-	auto convert_frame_rate_to_average_time_per_frame(IMFMediaType &media_type) noexcept
+	auto get_average_time_per_frame(IMFMediaType &media_type) noexcept
 	{
 		uint32_t rate{}, scale{};
 		MFGetAttributeRatio(&media_type, MF_MT_FRAME_RATE, &rate, &scale);
@@ -110,7 +112,7 @@ namespace mfop
 	auto set_color_space_media_types(IMFMediaType &media_type, int32_t const &height) noexcept
 	{
 		media_type.SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
-		media_type.SetUINT32(MF_MT_VIDEO_CHROMA_SITING, MFVideoChromaSubsampling_MPEG2);
+		media_type.SetUINT32(MF_MT_VIDEO_CHROMA_SITING, MFVideoChromaSubsampling_ProgressiveChroma | MFVideoChromaSubsampling_MPEG2);
 		if (height <= 720)
 		{
 			aviutl_logger->info(aviutl_logger, L"Color space desires BT.601.");
@@ -197,13 +199,11 @@ namespace mfop
 	auto write_sample_to_sink_writer(IMFSinkWriter &sink_writer, DWORD const &index, IMFMediaBuffer &buffer, int64_t const &time, int64_t const &duration) noexcept
 	{
 		auto sample{ com_ptr_nothrow<IMFSample>{} };
-		RETURN_IF_FAILED(MFCreateSample(out_ptr(sample)));
-		RETURN_IF_FAILED(sample->AddBuffer(&buffer));
-		RETURN_IF_FAILED(sample->SetSampleTime(time));
-		RETURN_IF_FAILED(sample->SetSampleDuration(duration));
-		RETURN_IF_FAILED(sink_writer.WriteSample(index, sample.get()));
-
-		return S_OK;
+		MFCreateSample(out_ptr(sample));
+		sample->AddBuffer(&buffer);
+		sample->SetSampleTime(time);
+		sample->SetSampleDuration(duration);
+		return sink_writer.WriteSample(index, sample.get());
 	}
 
 	expected<com_ptr_nothrow<IMFDXGIDeviceManager>, error> make_dxgi_device_manager() noexcept
@@ -429,9 +429,8 @@ namespace mfop
 		com_ptr_nothrow<IMF2DBuffer2> video_2d_buffer{};
 		RETURN_IF_FAILED(video_buffer.query_to(&video_2d_buffer));
 
-		uint8_t *scanline{};
+		uint8_t *scanline{}, *buffer_begin{};
 		long stride{};
-		uint8_t *buffer_begin{};
 		DWORD buffer_size{};
 		video_2d_buffer->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_begin, &buffer_size);
 		RETURN_IF_FAILED(MFCopyImage(scanline, stride, is_accelerated ? yuy2_to_nv12(frame_image, { oip.w, oip.h }).get() : frame_image, stride, stride, oip.h));
@@ -441,9 +440,7 @@ namespace mfop
 		video_2d_buffer->GetContiguousLength(&contiguous_length);
 		video_buffer->SetCurrentLength(contiguous_length);
 
-		RETURN_IF_FAILED(write_sample_to_sink_writer(sink_writer, index, *video_buffer, time_stamp * f, time_stamp));
-
-		return S_OK;
+		return write_sample_to_sink_writer(sink_writer, index, *video_buffer, time_stamp * f, time_stamp);
 	}
 
 	auto write_audio_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &n, DWORD const &index, IMFMediaType &input_media_type, int32_t const &max_samples) noexcept
@@ -470,9 +467,7 @@ namespace mfop
 
 		audio_buffer->SetCurrentLength(static_cast<DWORD>(actual_samples));
 
-		RETURN_IF_FAILED(write_sample_to_sink_writer(sink_writer, index, *audio_buffer, sample_time, sample_duration));
-
-		return S_OK;
+		return write_sample_to_sink_writer(sink_writer, index, *audio_buffer, sample_time, sample_duration);
 	}
 
 	using unique_mfshutdown_call = unique_call<decltype(&::MFShutdown), ::MFShutdown>;
@@ -502,15 +497,12 @@ namespace mfop
 
 		aviutl_logger->info(aviutl_logger, L"Sending video samples to the writer...");
 
-		uint32_t d3d_resource_version{};
-		auto const is_accelerated{ SUCCEEDED(input_media_types.first->GetUINT32(MF_MT_D3D_RESOURCE_VERSION, &d3d_resource_version)) };
-
-		auto const video_time_stamp{ convert_frame_rate_to_average_time_per_frame(*input_media_types.first) };
+		auto const video_time_stamp{ get_average_time_per_frame(*input_media_types.first) };
 
 		auto aeternum{ S_OK };
 
 		for (auto f{ 0 }; f < oip.n; ++f)
-			if ((aeternum = write_video_sample(oip, *sink_writer, f, indices.first, *input_media_types.first, is_accelerated, video_time_stamp)) < 0)
+			if ((aeternum = write_video_sample(oip, *sink_writer, f, indices.first, *input_media_types.first, configuration.is_accelerated, video_time_stamp)) < 0)
 				goto abort;
 		{
 			aviutl_logger->info(aviutl_logger, L"Sending audio samples to the writer...");

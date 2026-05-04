@@ -83,7 +83,7 @@ namespace mfop
 			if (is_same<Key, is_hevc_preferable>::value)
 				return WritePrivateProfileStringW(L"mp4", L"videoFormat", to_wstring(value).c_str(), configuration_ini_path);
 
-			return false;
+			unreachable();
 		}
 
 		auto on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
