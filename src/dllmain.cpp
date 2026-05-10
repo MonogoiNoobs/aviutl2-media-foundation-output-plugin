@@ -43,7 +43,7 @@ auto func_output(OUTPUT_INFO *oip) noexcept
 
 	if (!result)
 	{
-		aviutl_logger->error(aviutl_logger, std::format(L"FAILED TO OUTPUT: {} (0x800{:x}{:04x}) in {}.", string_to_wstring(std::system_category().message(result.error().code)), HRESULT_FACILITY(result.error().code), HRESULT_CODE(result.error().code), string_to_wstring(result.error().where)).c_str());
+		aviutl_logger->error(aviutl_logger, std::format(L"FAILED TO OUTPUT: {} ({}) in {}.", string_to_wstring(std::system_category().message(result.error().code)), result.error().code, string_to_wstring(result.error().where)).c_str());
 		return false;
 	}
 
@@ -70,8 +70,10 @@ extern "C"
 		static OUTPUT_PLUGIN_TABLE constexpr output_plugin_table{
 			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
 			L"Media Foundation 出力",					// プラグインの名前
-			L"MP4 (*.mp4)\0*.mp4\0Advanced Systems Format (*.wmv)\0*.wmv\0",					// 出力ファイルのフィルタ
-			L"MFOutput (" __DATE__ ") by MonogoiNoobs",	// プラグインの情報
+			L"MP4 (*.mp4)\0"						"*.mp4\0"
+			 //"Advanced Systems Format (*.wmv)\0"	"*.wmv\0"
+			,
+			L"© 2025–2026 MonogoiNoobs",	// プラグインの情報
 			func_output,									// 出力時に呼ばれる関数へのポインタ
 			func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 			nullptr,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)

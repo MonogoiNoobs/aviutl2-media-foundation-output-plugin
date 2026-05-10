@@ -48,7 +48,7 @@ namespace mfop
 	using fps_t = pair<int32_t const, int32_t const>;
 	using stream_indices_t = pair<DWORD const, DWORD const>;
 	using IMFMediaTypes = pair<com_ptr_nothrow<IMFMediaType>, com_ptr_nothrow<IMFMediaType>>;
-	using sink_writer_with_indices_t = pair<com_ptr_nothrow<IMFSinkWriter>, stream_indices_t const>;
+	using sink_writer_with_indices_and_media_types_t = tuple<com_ptr_nothrow<IMFSinkWriter>, stream_indices_t const, IMFMediaTypes const>;
 
 	auto yuy2_to_nv12(uint8_t const yuy2[], resolution_t &&resolution)
 	{
@@ -90,8 +90,10 @@ namespace mfop
 	{
 		uint32_t rate{}, scale{};
 		MFGetAttributeRatio(&media_type, MF_MT_FRAME_RATE, &rate, &scale);
+
 		uint64_t result{};
 		MFFrameRateToAverageTimePerFrame(rate, scale, &result);
+
 		return result;
 	}
 
@@ -113,6 +115,7 @@ namespace mfop
 	{
 		media_type.SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
 		media_type.SetUINT32(MF_MT_VIDEO_CHROMA_SITING, MFVideoChromaSubsampling_ProgressiveChroma | MFVideoChromaSubsampling_MPEG2);
+
 		if (height <= 720)
 		{
 			aviutl_logger->info(aviutl_logger, L"Color space desires BT.601.");
@@ -157,6 +160,7 @@ namespace mfop
 		input_video_media_type->SetUINT32(MF_MT_DEFAULT_STRIDE, default_stride);
 		input_video_media_type->SetUINT32(MF_MT_SAMPLE_SIZE, image_size);
 		input_video_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true);
+		input_video_media_type->SetUINT32(MF_MT_FIXED_SIZE_SAMPLES, true);
 		MFSetAttributeSize(input_video_media_type.get(), MF_MT_FRAME_SIZE, width, height);
 		MFSetAttributeRatio(input_video_media_type.get(), MF_MT_FRAME_RATE, rate, scale);
 		MFSetAttributeRatio(input_video_media_type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
@@ -198,7 +202,7 @@ namespace mfop
 
 	auto write_sample_to_sink_writer(IMFSinkWriter &sink_writer, DWORD const &index, IMFMediaBuffer &buffer, int64_t const &time, int64_t const &duration) noexcept
 	{
-		auto sample{ com_ptr_nothrow<IMFSample>{} };
+		com_ptr_nothrow<IMFSample> sample{};
 		MFCreateSample(out_ptr(sample));
 		sample->AddBuffer(&buffer);
 		sample->SetSampleTime(time);
@@ -244,9 +248,9 @@ namespace mfop
 		return dxgi_device_manager;
 	}
 
-	expected<com_ptr_nothrow<IMFSinkWriter>, error> make_sink_writer(wstring_view output_name, IMFAttributes &media_type, GUID const &output_video_format) noexcept
+	expected<com_ptr_nothrow<IMFSinkWriter>, error> make_sink_writer(wstring_view output_name, bool const &is_accelerated, GUID const &output_video_format) noexcept
 	{
-		auto sink_writer_attributes{ com_ptr_nothrow<IMFAttributes>{} };
+		com_ptr_nothrow<IMFAttributes> sink_writer_attributes{};
 		MFCreateAttributes(out_ptr(sink_writer_attributes), 3);
 
 		sink_writer_attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, true);
@@ -257,8 +261,7 @@ namespace mfop
 			sink_writer_attributes->SetUINT32(MF_MPEG4SINK_MOOV_BEFORE_MDAT, true);
 		}
 
-		uint32_t d3d_resource_version{};
-		if (SUCCEEDED(media_type.GetUINT32(MF_MT_D3D_RESOURCE_VERSION, &d3d_resource_version)))
+		if (is_accelerated)
 			if (auto const d3d_manager{ make_dxgi_device_manager() })
 			{
 				sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true);
@@ -333,7 +336,7 @@ namespace mfop
 	{
 		__assume(quality <= 100);
 
-		auto encoder_attributes{ com_ptr_nothrow<IMFAttributes>{} };
+		com_ptr_nothrow<IMFAttributes> encoder_attributes{};
 		MFCreateAttributes(out_ptr(encoder_attributes), 5);
 
 		switch (output_video_format.Data1)
@@ -361,7 +364,7 @@ namespace mfop
 
 	expected<HRESULT, error> configure_audio_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_media_type) noexcept
 	{
-		auto encoder_attributes{ com_ptr_nothrow<IMFAttributes>{} };
+		com_ptr_nothrow<IMFAttributes> encoder_attributes{};
 
 		if (output_video_format == MFVideoFormat_WVC1)
 		{
@@ -403,16 +406,17 @@ namespace mfop
 		return stream_indices_t{ move(*video_index), move(*audio_index) };
 	}
 
-	expected<sink_writer_with_indices_t, error> make_initialized_sink_writer(OUTPUT_INFO const &oip, GUID const &output_video_format, uint32_t const &video_quality, uint32_t const &audio_bit_rate, IMFMediaTypes const &media_types) noexcept
+	expected<sink_writer_with_indices_and_media_types_t, error> make_initialized_sink_writer(OUTPUT_INFO const &oip, GUID const &output_video_format, output_configuration const &configuration) noexcept
 	{
-		auto const sink_writer{ make_sink_writer(oip.savefile, *media_types.first, output_video_format) };
+		auto const media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
+		auto const sink_writer{ make_sink_writer(oip.savefile, configuration.is_accelerated, output_video_format) };
 		if (!sink_writer) [[unlikely]] return unexpected{ sink_writer.error() };
-		auto const indices{ configure_streams(**sink_writer, video_quality, audio_bit_rate, media_types, output_video_format) };
+		auto const indices{ configure_streams(**sink_writer, configuration.video_quality, configuration.audio_bit_rate, media_types, output_video_format) };
 		if (!indices) [[unlikely]] return unexpected{ indices.error() };
 
 		UNEXPECT_IF_FAILED((*sink_writer)->BeginWriting());
 
-		return sink_writer_with_indices_t{ move(*sink_writer), move(*indices) };
+		return sink_writer_with_indices_and_media_types_t{ move(*sink_writer), move(*indices), move(media_types) };
 	}
 
 	auto write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type, bool const &is_accelerated, int64_t const &time_stamp) noexcept
@@ -470,11 +474,10 @@ namespace mfop
 		return write_sample_to_sink_writer(sink_writer, index, *audio_buffer, sample_time, sample_duration);
 	}
 
-	using unique_mfshutdown_call = unique_call<decltype(&::MFShutdown), ::MFShutdown>;
-	[[nodiscard]] inline unique_mfshutdown_call MFStartup(DWORD &&flags = MFSTARTUP_FULL)
+	[[nodiscard]] inline auto MFStartup(DWORD &&flags = MFSTARTUP_FULL)
 	{
 		FAIL_FAST_IF_FAILED(::MFStartup(MF_VERSION, flags));
-		return {};
+		return unique_call<decltype(&::MFShutdown), ::MFShutdown>{};
 	}
 
 	expected<HRESULT, error> output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
@@ -486,12 +489,10 @@ namespace mfop
 
 		auto const output_video_format{ get_suitable_output_video_format_guid(filesystem::path(oip.savefile).extension(), configuration.is_hevc_preferable) };
 
-		auto const input_media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
-
-		auto sink_writer_with_indices{ make_initialized_sink_writer(oip, output_video_format, configuration.video_quality, configuration.audio_bit_rate, input_media_types) };
+		auto sink_writer_with_indices{ make_initialized_sink_writer(oip, output_video_format, configuration) };
 		if (!sink_writer_with_indices) [[unlikely]] return unexpected{ sink_writer_with_indices.error() };
 
-		auto const [sink_writer, indices] { *sink_writer_with_indices };
+		auto const [sink_writer, indices, input_media_types] { *sink_writer_with_indices };
 
 		oip.func_set_buffer_size(8, 8);
 

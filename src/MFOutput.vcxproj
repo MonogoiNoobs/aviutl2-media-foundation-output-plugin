@@ -139,7 +139,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
-    <None Include="README.md" />
     <None Include="resource.hm" />
   </ItemGroup>
   <ItemGroup>
