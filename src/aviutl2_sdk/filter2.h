@@ -34,6 +34,8 @@ struct EDIT_SECTION;
 
 // オブジェクトハンドル
 typedef void* OBJECT_HANDLE;
+// エフェクトハンドル
+typedef void* EFFECT_HANDLE;
 
 // トラックバー項目構造体
 // 例：FILTER_ITEM_TRACK track = { L"数値", 100.0, 0.0, 1000.0, 0.01 };
@@ -73,10 +75,11 @@ struct FILTER_ITEM_CHECK {
 // チェックボックス(セクション毎)項目構造体
 // 例：FILTER_ITEM_CHECK_SECTION check = { L"チェック", false };
 struct FILTER_ITEM_CHECK_SECTION {
-	FILTER_ITEM_CHECK_SECTION(LPCWSTR name, bool value) : name(name), value(value) {}
-	LPCWSTR type = L"checksection";	// 設定の種別
-	LPCWSTR name;					// 設定名
-	bool value;						// 設定値 (フィルタ処理の呼び出し時に現在の値に更新されます)
+	FILTER_ITEM_CHECK_SECTION(LPCWSTR name, bool value, bool multi_section = true) : name(name), value(value), multi_section(multi_section) {}
+	LPCWSTR type = L"checksection2";	// 設定の種別 ※以前の"checksection"種別も互換対応されます
+	LPCWSTR name;						// 設定名
+	bool value;							// 設定値 (フィルタ処理の呼び出し時に現在の値に更新されます)
+	const bool multi_section;			// セクション毎設定の初期値
 };
 
 // 色選択項目構造体
@@ -119,6 +122,9 @@ struct FILTER_ITEM_FILE {
 
 // 汎用データ項目構造体 (設定が表示されない項目になります)
 // フィルタ処理関数内でvalueの参照先データを更新することが出来ます
+// ※Undoポイントの作成や編集済みフラグの設定はされません
+// ※保存済みの汎用データが空の場合はデフォルト値に初期化されます
+// フィルタ処理関数内のset_filter_item_data_size()関数でデータのサイズを変更出来ます
 // 例：struct Data {
 //       int   item1 = 1;
 //       float item2 = 2.0f;
@@ -129,9 +135,18 @@ struct FILTER_ITEM_DATA {
 	FILTER_ITEM_DATA(LPCWSTR name) : name(name), size(sizeof(T)), value(&default_value) {}
 	LPCWSTR type = L"data";		// 設定の種別
 	LPCWSTR name;				// 設定名
-	T* value;					// 設定値 (フィルタ処理の呼び出し時に現在の値のポインタに更新されます)
-	const int size;				// 汎用データのサイズ(1024バイト以下)
+	T* value;					// 汎用データのポインタ (フィルタ処理の呼び出し時に現在の汎用データのポインタに更新されます)
+	int size;					// 汎用データのサイズ (フィルタ処理の呼び出し時に現在の汎用データのサイズに更新されます) ※16KB以下
 	T default_value;			// デフォルト値 (Tの定義でデフォルト値を指定しておく)
+};
+// 型を指定しない場合の定義 ※初期は空のデータ
+template<>
+struct FILTER_ITEM_DATA<void> {
+	FILTER_ITEM_DATA(LPCWSTR name) : name(name) {}
+	LPCWSTR type = L"data";		// 設定の種別
+	LPCWSTR name;				// 設定名
+	void* value = nullptr;		// 汎用データのポインタ (フィルタ処理の呼び出し時に現在の汎用データのポインタに更新されます)
+	int size = 0;				// 汎用データのサイズ (フィルタ処理の呼び出し時に現在の汎用データのサイズに更新されます)
 };
 
 // 設定グループ項目構造体
@@ -147,12 +162,17 @@ struct FILTER_ITEM_GROUP {
 
 // ボタン項目構造体
 // ボタンを押すとコールバック関数が呼ばれます ※plugin2.hの編集のコールバック関数と同様な形になります
-// 例：FILTER_ITEM_BUTTON button = { L"初期化", [](EDIT_SECTION* edit) { /* ボタンを押した時の処理 */ } };
+// 例：FILTER_ITEM_BUTTON button = { L"初期化", [](EDIT_SECTION* edit, OBJECT_HANDLE object, LPCWSTR effect, LPCWSTR item) {
+//        /* ボタンを押した時の処理 (引数はEDIT_SECTION::get_object_item_value()の引数と同じ形式になります) */
+//     } };
 struct FILTER_ITEM_BUTTON {
-	FILTER_ITEM_BUTTON(LPCWSTR name, void (*callback)(EDIT_SECTION* edit)) : name(name), callback(callback) {}
+	FILTER_ITEM_BUTTON(LPCWSTR name, void (*callback)(EDIT_SECTION* edit, OBJECT_HANDLE object, LPCWSTR effect, LPCWSTR item))
+		: name(name), callback2(callback) {}
+	FILTER_ITEM_BUTTON(LPCWSTR name, void (*callback)(EDIT_SECTION* edit)) : name(name), callback(callback) {} // ※互換対応
 	LPCWSTR type = L"button";			// 設定の種別
 	LPCWSTR name;						// 設定名
-	void (*callback)(EDIT_SECTION*);	// ボタンを押した時のコールバック関数 (呼び出し時に各設定項目の設定値が更新されます)
+	void (*callback)(EDIT_SECTION*) = nullptr; // ボタンを押した時のコールバック関数 (呼び出し時に各設定項目の設定値が更新されます)
+	void (*callback2)(EDIT_SECTION*, OBJECT_HANDLE, LPCWSTR, LPCWSTR) = nullptr; // 同上
 };
 
 // 文字列項目構造体 ※1行の文字列
@@ -188,6 +208,30 @@ struct FILTER_ITEM_SEPARATOR {
 	FILTER_ITEM_SEPARATOR(LPCWSTR name) : name(name) {}
 	LPCWSTR type = L"separator";	// 設定の種別
 	LPCWSTR name;					// 設定名
+};
+
+// 非表示条件項目構造体
+// 非表示条件を満たした項目を非表示にすることが出来ます
+// 例：FILTER_ITEM_HIDE_RULE hide = { L"ファイル", L"チェック", FILTER_ITEM_HIDE_RULE::OPERATOR::EQUAL, 0 };
+struct FILTER_ITEM_HIDE_RULE {
+	enum class OPERATOR {
+		EQUAL		= 0, // == (等しい)
+		NOT_EQUAL	= 1, // != (等しくない)
+		GREATER		= 2, // > (より大きい)
+		LESS		= 3, // < (より小さい)
+	};
+	FILTER_ITEM_HIDE_RULE(LPCWSTR name, LPCWSTR condition_name, OPERATOR condition_operator = OPERATOR::EQUAL, int condition_value = 0)
+		: name(name), condition_name(condition_name), condition_operator(condition_operator), condition_value(condition_value) {}
+	LPCWSTR type = L"hiderule";			// 設定の種別
+	LPCWSTR name;						// 非表示にする設定名 ※設定値を持つ項目のみ
+	LPCWSTR condition_name;				// 非表示の条件の設定名
+										// チェックボックス項目,リスト選択項目,ファイル選択項目,フォルダ選択項目
+										// ※セクション毎のチェックボックスはセクション毎が有効の場合は2を返却(0/1/2)
+										// ※ファイル,フォルダ選択項目は選択されているかを返却(0/1)
+										// ※nullptrを指定した場合は常に非表示
+										// ※"filter"を指定した場合はフィルタオブジェクトかを返却(0/1)
+	const OPERATOR condition_operator;	// 非表示の条件の比較種別
+	const int condition_value;			// 非表示の条件の比較値
 };
 
 //----------------------------------------------------------------------------------
@@ -310,6 +354,13 @@ struct SCENE_INFO {
 	int width, height;		// シーンの解像度
 	int rate, scale;		// シーンのフレームレート
 	int sample_rate;		// シーンのサンプリングレート
+	int id;					// シーンのID
+	int origin_id;			// 描画処理の起点のシーンのID
+	int flag;				// フラグ
+	int64_t rendering_id;	// シーンの描画処理毎のID (画像・音声でID系統が異なります)
+	static constexpr int FLAG_REFERENCE_FRAME = 1; // シーンチェンジ、モーションブラーの参照フレームの描画処理か？
+
+	inline bool is_reference_frame() const { return flag & FLAG_REFERENCE_FRAME; }
 };
 
 // オブジェクト情報構造体
@@ -332,6 +383,12 @@ struct OBJECT_INFO {
 	int layer;				// オブジェクトの現在のレイヤー番号 ※描画対象のオブジェクトのレイヤー番号
 	int	index;				// 複数オブジェクト時の現在の対象番号 ※個別オブジェクト用
 	int	num;				// 複数オブジェクト時の対象数 (1 = 単体オブジェクト / 0 = 不定) ※個別オブジェクト用
+	int frame_s;			// 全体(シーン)基準のオブジェクトの開始フレーム(0からの番号)
+	int frame_e;			// 全体(シーン)基準のオブジェクトの終了フレーム(0からの番号)
+	int effect_layer;		// 対象エフェクトの現在のレイヤー番号 ※自身のオブジェクトのレイヤー番号
+	int origin_frame;		// 全体(シーン)基準のレンダリングの起点フレーム(0からの整数)
+	OBJECT_HANDLE handle;	// 自身のオブジェクトのハンドル
+	EFFECT_HANDLE effect_handle;	// 自身のエフェクトのハンドル
 
 	inline bool is_filter_object() const { return flag & FLAG_FILTER_OBJECT; }
 };
@@ -350,12 +407,23 @@ struct OBJECT_AUDIO_PARAM {
 	float vol_l, vol_r;	// 音量倍率 (1.0=等倍)
 };
 
+// エフェクト実行の設定パラメータ構造体
+struct EFFECT_ITEM_PARAM {
+	LPCWSTR name;	// 設定名 ※エイリアスファイルの設定のキーの名称
+	LPCSTR value;	// 設定値(UTF8) ※エイリアスファイルの設定値と同じフォーマット
+};
+
 //----------------------------------------------------------------------------------
 
 // d3d11.h向けの前方宣言 ※includeしないで良いように定義
 struct ID3D11Texture2D;
 struct ID3D11BlendState;
 struct ID3D11SamplerState;
+struct IDWriteFont;
+// DirectXMath.h向けの前方宣言
+namespace DirectX {
+	struct XMMATRIX;
+}
 
 // 画像フィルタ処理用構造体
 struct FILTER_PROC_VIDEO {
@@ -395,6 +463,7 @@ struct FILTER_PROC_VIDEO {
 
 	// 指定オブジェクトの画像出力項目のパラメータを取得する
 	// object		: 対象のオブジェクトのハンドル (nullptrを指定すると現在のオブジェクトが対象)
+	//				  ※フィルタ処理対象のシーンにあるオブジェクトのみ取得出来ます
 	// offset		: 取得時間のオフセット(秒) (0なら現時間)
 	// output		: パラメータの格納先へのポインタ
 	// output_size	: パラメータの格納先のサイズ ※サイズ分のみ取得されます
@@ -440,6 +509,7 @@ struct FILTER_PROC_VIDEO {
 	void (*set_default_anchor)(int width, int height);
 
 	// 描画時の合成モードを設定します
+	// フレームバッファへの描画の合成モードは元々の合成モードが通常の場合のみ反映されます
 	// 合成モードを利用すると描画処理が重くなります
 	// blend	: 合成モード
 	void (*set_blend_mode)(BLEND_MODE blend);
@@ -500,6 +570,8 @@ struct FILTER_PROC_VIDEO {
 	//				  "cache:xxxx"		= キャッシュバッファ(xxxxは任意の名前)
 	//				  "image:xxxx"		= 画像ファイル(xxxxは画像ファイルパス) ※画像はVRAMにキャッシュされます
 	//				  "random"			= 乱数バッファ(0.0～1.0の乱数値の256x256の領域) ※DXGI_FORMAT_R32_FLOAT(r値のみ)になります
+	//				  "layer:xxxx[+]"	= レイヤー上のオブジェクト(xxxxはレイヤー番号、末尾に"+"指定で追加フィルタを実行)
+	//				  "before"			= 直前オブジェクト
 	// 戻り値		: 失敗した場合はfalse (画像リソース名が不正な場合等)
 	bool (*copy_image_resource)(LPCWSTR dst_resource, LPCWSTR src_resource);
 
@@ -720,6 +792,53 @@ struct FILTER_PROC_VIDEO {
 	// 戻り値		: 失敗した場合はfalse (画像リソース名が不正な場合等)
 	bool (*set_image_resource_data)(LPCWSTR resource, const void* buffer, int width, int height, int pitch, INPUT_PIXEL_FORMAT format);
 
+	// 冗長なので廃止します ※EDIT_SECTIONに移動しました
+	IDWriteFont* (*deprecated_get_font)(LPCWSTR font);
+
+	// 指定の汎用データ項目のデータサイズを変更します
+	// サイズを変更すると汎用データのポインタは更新されます
+	// filter_item_data	: 対象のFILTER_ITEM_DATAへのポインタ
+	// size				: 汎用データのサイズ
+	void (*set_filter_item_data_size)(void* filter_item_data, int size);
+
+	// ユーザーデータのポインタ (FLAG_USERDATAが有効の時に設定されます)
+	// func_create()で返却したユーザーデータのポインタ
+	void* userdata;
+
+	// 画像リソースを解放します
+	// resource		: 解放する画像リソース名
+	//				  "resource:xxxx"	= 標準リソース(xxxxは任意の名前)
+	// 戻り値		: 失敗した場合はfalse (画像リソース名が不正な場合等)
+	bool (*release_image_resource)(LPCWSTR resource);
+
+	// 指定のエフェクトを実行します
+	// フィルタ効果、入力項目(図形等)のエフェクトが実行出来ます
+	// ※name,param_list,resourceの全てをnullptr指定すると自身以降のフィルタ効果を実行します
+	// name			: 実行するエフェクト名 (エイリアスファイルのeffect.nameの値)
+	// param_list	: 設定パラメータのリストへのポインタ ※nullptrの場合は設定無し
+	// param_num	: 設定パラメータの数
+	// resource		: エフェクトの処理対象の画像リソース名 ※エフェクトが入力項目の場合は新規作成します
+	//				  "object"			= 現在のオブジェクト ※nullptrの指定でも現在のオブジェクトになります
+	//				  "resource:xxxx"	= 標準リソース(xxxxは任意の名前)
+	//				  ※標準リソースが対象の場合も現在のオブジェクトの画像パラメータが参照・更新されます
+	// 戻り値		: 失敗した場合はfalse (エフェクト名や画像リソース名が不正な場合等)
+	bool (*exec_effect)(LPCWSTR name, EFFECT_ITEM_PARAM* param_list, int param_num, LPCWSTR resource);
+
+	// 描画時の合成モードを設定します
+	// set_blend_mode()と異なりフレームバッファへの描画の合成モードも常に反映されます
+	// 合成モードを利用すると描画処理が重くなります
+	// blend	: 合成モード
+	void (*set_blend_mode_force)(BLEND_MODE blend);
+
+	// 現在のオブジェクトに影響しているグループ制御オブジェクトを取得します
+	// layer	: 上位の影響しているグループ制御のインデックス(0は直前のグループ制御) 
+	// 戻り値	: 取得したグループ制御オブジェクトのハンドル (グループ制御対象外の場合はnullptrを返却)
+	OBJECT_HANDLE (*get_group_control_object)(int index);
+
+	// 現在のオブジェクトに適用されるグループ制御の座標変換行列を取得します (グループ制御対象を結合した行列)
+	// 戻り値	: グループ制御対象外の場合はfalse
+	bool (*get_group_matrix)(DirectX::XMMATRIX* matrix);
+
 };
 
 //----------------------------------------------------------------------------------
@@ -753,6 +872,7 @@ struct FILTER_PROC_AUDIO {
 
 	// 指定オブジェクトの音声出力項目のパラメータを取得する
 	// object		: 対象のオブジェクトのハンドル (nullptrを指定すると現在のオブジェクトが対象)
+	//				  ※フィルタ処理対象のシーンにあるオブジェクトのみ取得出来ます
 	// offset		: 取得時間のオフセット(秒) (0なら現時間)
 	// param		: パラメータの格納先へのポインタ
 	// param_size	: パラメータの格納先のサイズ ※サイズ分のみ取得されます
@@ -765,19 +885,31 @@ struct FILTER_PROC_AUDIO {
 	// 戻り値	: 取得したオブジェクトのハンドル (存在しない場合はnullptrを返却)
 	OBJECT_HANDLE (*get_audio_object)(int layer, double offset);
 
+	// 指定の汎用データ項目のデータサイズを変更します
+	// サイズを変更すると汎用データのポインタは更新されます
+	// filter_item_data	: 対象のFILTER_ITEM_DATAへのポインタ
+	// size				: 汎用データのサイズ (16KB以下)
+	void (*set_filter_item_data_size)(void* filter_item_data, int size);
+
+	// ユーザーデータのポインタ (FLAG_USERDATAが有効の時に設定されます)
+	// func_create()で返却したユーザーデータのポインタ
+	void* userdata;
+
 };
 
 //----------------------------------------------------------------------------------
 
 // フィルタプラグイン構造体
 struct FILTER_PLUGIN_TABLE {
-	int flag;								// フラグ
-	static constexpr int FLAG_VIDEO = 1;	// 画像フィルタをサポートする
-	static constexpr int FLAG_AUDIO = 2;	// 音声フィルタをサポートする
-											// 画像と音声のフィルタ処理は別々のスレッドで処理されます
-	static constexpr int FLAG_INPUT = 4;	// メディアオブジェクトの初期入力をする (メディアオブジェクトにする場合)
-	static constexpr int FLAG_FILTER = 8;	// フィルタオブジェクトをサポートする (フィルタオブジェクトに対応する場合)
-											// フィルタオブジェクトの場合は画像サイズの変更が出来ません
+	int flag;									// フラグ
+	static constexpr int FLAG_VIDEO = 1;		// 画像フィルタをサポートする
+	static constexpr int FLAG_AUDIO = 2;		// 音声フィルタをサポートする
+												// 画像と音声のフィルタ処理は別々のスレッドで処理されます
+	static constexpr int FLAG_INPUT = 4;		// メディアオブジェクトの初期入力をする (メディアオブジェクトにする場合)
+	static constexpr int FLAG_FILTER = 8;		// フィルタオブジェクトをサポートする (フィルタオブジェクトに対応する場合)
+												// フィルタオブジェクトの場合は画像サイズの変更が出来ません
+	static constexpr int FLAG_USERDATA = 16;	// ユーザーデータをサポートする ※func_create(),func_destroy()が呼ばれるようになります
+	static constexpr int FLAG_HIDEMENU = 32;	// オブジェクト・フィルタ効果の追加メニューリストに表示しない
 	LPCWSTR name;				// プラグインの名前
 	LPCWSTR label;				// ラベルの初期値 (nullptrならデフォルトのラベルになります)
 	LPCWSTR information;		// プラグインの情報
@@ -790,5 +922,18 @@ struct FILTER_PLUGIN_TABLE {
 	// 音声フィルタ処理関数へのポインタ (FLAG_AUDIOが有効の時のみ呼ばれます)
 	// 戻り値	: falseを返却すると以降のフィルタや出力処理が中断されます
 	bool (*func_proc_audio)(FILTER_PROC_AUDIO* audio);
+
+	// エフェクトのインスタンスが生成される時に呼ばれる関数へのポインタ (FLAG_USERDATAが有効の時のみ呼ばれます)
+	// ※オブジェクトと関連しない状態でも呼ばれます
+	// effect_id	: エフェクトのID (アプリ起動毎の固有ID)
+	// 戻り値		: 任意のユーザーデータのポインタ
+	void* (*func_create)(int64_t effect_id);
+
+	// エフェクトのインスタンスが破棄される時に呼ばれる関数へのポインタ (FLAG_USERDATAが有効の時のみ呼ばれます)
+	// 編集データやUndoバッファ等の全てのインスタンスが破棄されると呼ばれます
+	// ※オブジェクトと関連しない状態でも呼ばれます
+	// effect_id	: エフェクトのID (アプリ起動毎の固有ID)
+	// userdata		: func_create()で返却したユーザーデータのポインタ
+	void (*func_destroy)(int64_t effect_id, void* userdata);
 
 };
