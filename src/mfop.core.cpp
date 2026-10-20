@@ -459,19 +459,15 @@ namespace mfop
 		long stride{};
 		DWORD buffer_size{};
 		ignore = video_2d_buffer->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_begin, &buffer_size);
-
-		if (is_accelerated)
-		{
-			auto const converted{ yuy2_to_nv12(frame_image, { oip.w, oip.h }) };
-
-			MFCopyImage(scanline, stride, converted.get(), stride, stride, oip.h);
-			MFCopyImage(scanline + (stride * oip.h), stride, converted.get() + (stride * oip.h), stride, stride, oip.h / 2);
-		}
-		else
-		{
-			MFCopyImage(scanline, stride, frame_image, stride, stride, oip.h);
-		}
-
+		MFCopyImage
+		(
+			scanline,
+			stride,
+			is_accelerated ? yuy2_to_nv12(frame_image, { oip.w, oip.h }).get() : frame_image,
+			stride,
+			stride,
+			is_accelerated ? oip.h * 3 / 2 : oip.h
+		);
 		ignore = video_2d_buffer->Unlock2D();
 
 		DWORD contiguous_length{};
