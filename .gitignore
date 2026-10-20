@@ -363,3 +363,5 @@ MigrationBackup/
 FodyWeavers.xsd
 
 .vscode/
+
+[Ss]rc/aviutl2_sdk/

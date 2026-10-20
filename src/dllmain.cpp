@@ -16,19 +16,24 @@ import mfop;
 
 static LOG_HANDLE *aviutl_logger;
 
+auto utf8_to_utf16(std::string_view source, wchar_t *__restrict dest = nullptr, std::int32_t const dest_size = 0)
+{
+	return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source.data(), static_cast<std::int32_t>(source.size()), dest, dest_size);
+}
+
 auto string_to_wstring(std::string_view str)
 {
-	auto const required_size{ static_cast<std::size_t>(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, str.data(), static_cast<std::int32_t>(str.size()), nullptr, 0)) };
+	auto const required_size{ utf8_to_utf16(str) };
 	std::wstring wstr(required_size, L'\0');
-	MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, str.data(), static_cast<std::int32_t>(str.size()), &wstr.front(), static_cast<std::int32_t>(required_size));
+	utf8_to_utf16(str, wstr.data(), required_size);
 	return wstr;
 }
 
-auto func_output(OUTPUT_INFO *oip) noexcept
+auto func_output(OUTPUT_INFO *__restrict oip) noexcept
 {
 	using namespace mfop::configure;
 
-	auto const result{ mfop::output_file
+	auto const succeeded{ mfop::output_file
 	(
 		*oip,
 		mfop::output_configuration
@@ -41,9 +46,19 @@ auto func_output(OUTPUT_INFO *oip) noexcept
 		*aviutl_logger
 	) };
 
-	if (!result)
+	if (not succeeded)
 	{
-		aviutl_logger->error(aviutl_logger, std::format(L"FAILED TO OUTPUT: {} ({}) in {}.", string_to_wstring(std::system_category().message(result.error().code)), result.error().code, string_to_wstring(result.error().where)).c_str());
+		aviutl_logger->error
+		(
+			aviutl_logger,
+			std::format
+			(
+				L"FAILED TO OUTPUT: {} ({}) in {}.",
+				string_to_wstring(std::system_category().message(succeeded.error().code)),
+				succeeded.error().code,
+				string_to_wstring(succeeded.error().where)
+			).c_str()
+		);
 		return false;
 	}
 
@@ -52,7 +67,7 @@ auto func_output(OUTPUT_INFO *oip) noexcept
 	return true;
 }
 
-auto func_config(HWND window, HINSTANCE instance)
+auto func_config(HWND __restrict window, HINSTANCE __restrict instance)
 {
 	mfop::configure::open_dialog(window, instance);
 	return true;
@@ -60,12 +75,12 @@ auto func_config(HWND window, HINSTANCE instance)
 
 extern "C"
 {
-	__declspec(dllexport) auto InitializeLogger(LOG_HANDLE *logger) noexcept
+	__declspec(dllexport) auto InitializeLogger(LOG_HANDLE *__restrict logger) noexcept
 	{
 		aviutl_logger = logger;
 	}
 
-	__declspec(dllexport) auto GetOutputPluginTable() noexcept
+	__declspec(dllexport) __declspec(restrict) OUTPUT_PLUGIN_TABLE const * GetOutputPluginTable() noexcept
 	{
 		static OUTPUT_PLUGIN_TABLE constexpr output_plugin_table{
 			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
@@ -73,7 +88,7 @@ extern "C"
 			L"MP4 (*.mp4)\0"						"*.mp4\0"
 			 //"Advanced Systems Format (*.wmv)\0"	"*.wmv\0"
 			,
-			L"© 2025–2026 MonogoiNoobs",	// プラグインの情報
+			L"Natively renders your result with simple preferences.",	// プラグインの情報
 			func_output,									// 出力時に呼ばれる関数へのポインタ
 			func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 			nullptr,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)

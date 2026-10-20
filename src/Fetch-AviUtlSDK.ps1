@@ -10,7 +10,7 @@ If (Test-Path aviutl2_sdk)
 Invoke-WebRequest https://spring-fragrance.mints.ne.jp/aviutl/aviutl2_sdk.zip -OutFile aviutl2_sdk.zip
 Expand-Archive aviutl2_sdk.zip
 Remove-Item aviutl2_sdk.zip
-Remove-Item aviutl2_sdk\* -Exclude *.h
+Remove-Item aviutl2_sdk\* -Exclude *.h,license.txt
 
 Get-ChildItem aviutl2_sdk\* | % { Get-Content $_ -Encoding OEM | Out-File "$_.utf8" }
 Remove-Item aviutl2_sdk\* -Exclude *.utf8

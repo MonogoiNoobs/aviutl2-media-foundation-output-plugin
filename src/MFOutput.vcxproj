@@ -80,6 +80,10 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <DelayLoadDLLs>User32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <AdditionalOptions>
+      </AdditionalOptions>
+      <LargeAddressAware>true</LargeAddressAware>
+      <LinkTimeCodeGeneration>UseFastLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <ResourceCompile>
       <Culture>0x0011</Culture>
@@ -120,6 +124,10 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <DelayLoadDLLs>User32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <AdditionalOptions>
+      </AdditionalOptions>
+      <LargeAddressAware>true</LargeAddressAware>
+      <LinkTimeCodeGeneration>UseFastLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <ResourceCompile>
       <Culture>0x0011</Culture>

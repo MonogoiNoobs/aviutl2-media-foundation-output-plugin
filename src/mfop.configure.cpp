@@ -71,7 +71,7 @@ namespace mfop
 		}
 
 		template<typename Key>
-		bool set(int32_t &&value) noexcept
+		bool set(int32_t &&__restrict value) noexcept
 		{
 			if (is_same<Key, audio_bit_rate>::value)
 				return WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).c_str(), configuration_ini_path);
@@ -86,53 +86,53 @@ namespace mfop
 			unreachable();
 		}
 
-		auto on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
+		auto on_init_dialog(HWND __restrict dialog, HWND __restrict, intptr_t) noexcept
 		{
-			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"H.264");
-			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"HEVC");
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"H.264");
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"HEVC");
 
-			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"96");
-			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"128");
-			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"160");
-			ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"192");
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"96");
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"128");
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"160");
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"192");
 
-			ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get<is_hevc_preferable>());
+			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get<is_hevc_preferable>());
 
-			SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get<video_quality>()).c_str());
-			ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get<audio_bit_rate>());
+			ignore = SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get<video_quality>()).c_str());
+			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get<audio_bit_rate>());
 
 			Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get<is_accelerated>());
 
 			return false;
 		}
 
-		auto on_command(HWND dialog, int32_t id, HWND, uint32_t) noexcept
+		auto on_command(HWND __restrict dialog, int32_t id, HWND __restrict, uint32_t) noexcept
 		{
 			switch (id)
 			{
 			case IDNO:
 				if (MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO | MB_ICONWARNING) == IDYES)
 				{
-					ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get_default<is_hevc_preferable>());
-					SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).c_str());
-					ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get_default<audio_bit_rate>());
+					ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get_default<is_hevc_preferable>());
+					ignore = SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).c_str());
+					ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get_default<audio_bit_rate>());
 					Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get_default<is_accelerated>());
 				}
 				break;
 			case IDOK:
-				set<is_hevc_preferable>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO2)));
-				set<video_quality>(std::min(100u, std::max(1u, GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false))));
+				ignore = set<is_hevc_preferable>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO2)));
+				ignore = set<video_quality>(std::min(100u, std::max(1u, GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false))));
 
-				set<audio_bit_rate>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO1)));
-				set<is_accelerated>(Button_GetCheck(GetDlgItem(dialog, IDC_CHECK1)));
+				ignore = set<audio_bit_rate>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO1)));
+				ignore = set<is_accelerated>(Button_GetCheck(GetDlgItem(dialog, IDC_CHECK1)));
 				[[fallthrough]];
 			case IDCANCEL:
-				EndDialog(dialog, id);
+				ignore = EndDialog(dialog, id);
 				break;
 			}
 		}
 
-		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t wParam, [[maybe_unused]] intptr_t lParam) noexcept
+		intptr_t CALLBACK config_dialog_proc(HWND __restrict dialog, uint32_t message, uintptr_t wParam, [[maybe_unused]] intptr_t lParam) noexcept
 		{
 			switch (message)
 			{
@@ -144,9 +144,9 @@ namespace mfop
 			}
 		}
 
-		void open_dialog(HWND &window, HINSTANCE &instance) noexcept
+		void open_dialog(HWND &__restrict window, HINSTANCE &__restrict instance) noexcept
 		{
-			DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
+			ignore = DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
 		}
 	}
 }
