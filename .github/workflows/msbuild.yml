@@ -19,10 +19,14 @@ env:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
 
     steps:
     - uses: actions/checkout@v6
+
+    - name: Activate Media Foundation
+      shell: powershell
+      run: Install-WindowsFeature Server-Media-Foundation
 
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v3
