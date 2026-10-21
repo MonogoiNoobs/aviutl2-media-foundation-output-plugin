@@ -86,7 +86,7 @@ namespace mfop
 			unreachable();
 		}
 
-		auto on_init_dialog(HWND __restrict dialog, HWND __restrict, intptr_t) noexcept
+		auto on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
 		{
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"H.264");
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"HEVC");
@@ -106,7 +106,7 @@ namespace mfop
 			return false;
 		}
 
-		auto on_command(HWND __restrict dialog, int32_t id, HWND __restrict, uint32_t) noexcept
+		auto on_command(HWND dialog, int32_t id, HWND, uint32_t) noexcept
 		{
 			switch (id)
 			{
@@ -132,7 +132,7 @@ namespace mfop
 			}
 		}
 
-		intptr_t CALLBACK config_dialog_proc(HWND __restrict dialog, uint32_t message, uintptr_t wParam, [[maybe_unused]] intptr_t lParam) noexcept
+		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t wParam, [[maybe_unused]] intptr_t lParam) noexcept
 		{
 			switch (message)
 			{
@@ -144,9 +144,9 @@ namespace mfop
 			}
 		}
 
-		void open_dialog(HWND &__restrict window, HINSTANCE &__restrict instance) noexcept
+		void open_dialog(HWND &window, HINSTANCE &instance) noexcept
 		{
-			ignore = DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
+			DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
 		}
 	}
 }

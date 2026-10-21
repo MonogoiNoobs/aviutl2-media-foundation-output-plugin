@@ -59,7 +59,7 @@ namespace mfop
 	using IMFMediaTypes = pair<com_ptr_nothrow<IMFMediaType>, com_ptr_nothrow<IMFMediaType>>;
 	using sink_writer_with_indices_and_media_types_t = tuple<com_ptr_nothrow<IMFSinkWriter>, stream_indices_t const, IMFMediaTypes const>;
 
-	auto yuy2_to_nv12(uint8_t const *__restrict yuy2, resolution_t &&__restrict resolution)
+	auto yuy2_to_nv12(uint8_t const *yuy2, resolution_t &&resolution)
 	{
 		__assume(resolution.first % 2 == 0 and resolution.second % 2 == 0);
 
@@ -84,12 +84,12 @@ namespace mfop
 		return output;
 	}
 
-	auto constexpr get_pcm_block_alignment(int32_t const &__restrict audio_ch, uint32_t &&__restrict bit) noexcept
+	auto constexpr get_pcm_block_alignment(int32_t const &audio_ch, uint32_t &&bit) noexcept
 	{
 		return (audio_ch * bit) / 8;
 	}
 
-	auto constexpr get_suitable_input_video_format_guid(bool const &__restrict is_accelerated) noexcept
+	auto constexpr get_suitable_input_video_format_guid(bool const &is_accelerated) noexcept
 	{
 		return is_accelerated ? MFVideoFormat_NV12 : MFVideoFormat_YUY2;
 	}
@@ -100,7 +100,7 @@ namespace mfop
 		return SUCCEEDED(D3D12CreateDevice(nullptr, minimum_feature_level, __uuidof(D3D12DeviceVersion), nullptr));
 	}
 
-	auto get_average_time_per_frame(IMFMediaType &__restrict media_type) noexcept
+	auto get_average_time_per_frame(IMFMediaType &media_type) noexcept
 	{
 		uint32_t rate{}, scale{};
 		ignore = MFGetAttributeRatio(&media_type, MF_MT_FRAME_RATE, &rate, &scale);
@@ -111,24 +111,23 @@ namespace mfop
 		return result;
 	}
 
-	auto get_suitable_output_video_format_guid(filesystem::path &&extension, bool const &__restrict is_hevc_preferable) noexcept
+	auto get_suitable_output_video_format_guid(filesystem::path &&extension, bool const &is_hevc_preferable) noexcept
 	{
 		if (extension == L".mp4") return is_hevc_preferable ? MFVideoFormat_HEVC : MFVideoFormat_H264;
 		if (extension == L".wmv") return MFVideoFormat_WVC1;
 		return MFVideoFormat_H264;
 	}
 
-	auto add_windows_media_qvba_activation_media_attributes(IMFAttributes &__restrict attributes, uint32_t const &__restrict quality) noexcept
+	auto add_windows_media_qvba_activation_media_attributes(IMFAttributes &attributes, uint32_t const &quality) noexcept
 	{
 		ignore = attributes.SetUINT32(MFPKEY_VBRENABLED.fmtid, true);
 		ignore = attributes.SetUINT32(MFPKEY_CONSTRAIN_ENUMERATED_VBRQUALITY.fmtid, true);
 		ignore = attributes.SetUINT32(MFPKEY_DESIRED_VBRQUALITY.fmtid, quality);
 	}
 
-	auto set_color_space_media_types(IMFMediaType &__restrict media_type, int32_t const &__restrict height) noexcept
+	auto set_color_space_media_types(IMFMediaType &media_type, int32_t const &height) noexcept
 	{
 		ignore = media_type.SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
-		ignore = media_type.SetUINT32(MF_MT_VIDEO_CHROMA_SITING, MFVideoChromaSubsampling_ProgressiveChroma | MFVideoChromaSubsampling_MPEG2);
 
 		if (height <= 720)
 		{
@@ -153,28 +152,19 @@ namespace mfop
 		}
 	}
 
-	auto make_input_video_media_type(resolution_t &&__restrict resolution, fps_t &&__restrict fps, bool const &__restrict is_accelerated) noexcept
+	auto make_input_video_media_type(resolution_t &&resolution, fps_t &&fps, bool const &is_accelerated) noexcept
 	{
 		auto const [width, height] { resolution };
 		auto const [rate, scale] { fps };
 
 		auto const video_format{ get_suitable_input_video_format_guid(is_accelerated) };
 
-		uint32_t image_size{};
-		ignore = MFCalculateImageSize(video_format, width, height, &image_size);
-
-		long default_stride{};
-		ignore = MFGetStrideForBitmapInfoHeader(video_format.Data1, width, &default_stride);
-
 		com_ptr_nothrow<IMFMediaType> input_video_media_type{};
 		ignore = MFCreateMediaType(out_ptr(input_video_media_type));
 		ignore = input_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
 		ignore = input_video_media_type->SetGUID(MF_MT_SUBTYPE, video_format);
 		ignore = input_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
-		ignore = input_video_media_type->SetUINT32(MF_MT_DEFAULT_STRIDE, default_stride);
-		ignore = input_video_media_type->SetUINT32(MF_MT_SAMPLE_SIZE, image_size);
 		ignore = input_video_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true);
-		ignore = input_video_media_type->SetUINT32(MF_MT_FIXED_SIZE_SAMPLES, true);
 		ignore = MFSetAttributeSize(input_video_media_type.get(), MF_MT_FRAME_SIZE, width, height);
 		ignore = MFSetAttributeRatio(input_video_media_type.get(), MF_MT_FRAME_RATE, rate, scale);
 		ignore = MFSetAttributeRatio(input_video_media_type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
@@ -184,7 +174,7 @@ namespace mfop
 		return input_video_media_type;
 	}
 
-	auto make_input_audio_media_type(int32_t const &__restrict channel_count, int32_t const &__restrict sampling_rate, GUID const &__restrict output_video_format) noexcept
+	auto make_input_audio_media_type(int32_t const &channel_count, int32_t const &sampling_rate, GUID const &output_video_format) noexcept
 	{
 		com_ptr_nothrow<IMFMediaType> input_audio_media_type{};
 		ignore = MFCreateMediaType(out_ptr(input_audio_media_type));
@@ -205,7 +195,7 @@ namespace mfop
 		return input_audio_media_type;
 	}
 
-	auto make_input_media_types(OUTPUT_INFO const &__restrict oip, GUID const &output_video_format, bool const &__restrict is_accelerated) noexcept
+	auto make_input_media_types(OUTPUT_INFO const &oip, GUID const &output_video_format, bool const &is_accelerated) noexcept
 	{
 		return IMFMediaTypes
 		{
@@ -214,7 +204,7 @@ namespace mfop
 		};
 	}
 
-	auto write_sample_to_sink_writer(IMFSinkWriter &__restrict sink_writer, DWORD const &__restrict index, IMFMediaBuffer &__restrict buffer, int64_t const &__restrict time, int64_t const &__restrict duration) noexcept
+	auto write_sample_to_sink_writer(IMFSinkWriter &sink_writer, DWORD const &index, IMFMediaBuffer &buffer, int64_t const &time, int64_t const &duration) noexcept
 	{
 		com_ptr_nothrow<IMFSample> sample{};
 		ignore = MFCreateSample(out_ptr(sample));
@@ -224,19 +214,8 @@ namespace mfop
 		return sink_writer.WriteSample(index, sample.get());
 	}
 
-	expected<com_ptr_nothrow<IMFDXGIDeviceManager>, error> make_dxgi_device_manager(bool&& is_dx12_preferable) noexcept
+	expected<com_ptr_nothrow<IMFDXGIDeviceManager>, error> make_dxgi_device_manager(bool &&is_dx12_preferable) noexcept
 	{
-		static auto const constinit d3d_feature_levels{ to_array(
-		{
-			D3D_FEATURE_LEVEL_11_1,
-			D3D_FEATURE_LEVEL_11_0,
-			D3D_FEATURE_LEVEL_10_1,
-			D3D_FEATURE_LEVEL_10_0,
-			D3D_FEATURE_LEVEL_9_3,
-			D3D_FEATURE_LEVEL_9_2,
-			D3D_FEATURE_LEVEL_9_1
-		}) };
-
 		aviutl_logger->info(aviutl_logger, L"Preparing DirectX Video Acceleration...");
 		com_ptr_nothrow<IUnknown> directx_device{};
 
@@ -247,6 +226,19 @@ namespace mfop
 		}
 		else
 		{
+			static auto const constinit d3d_feature_levels{ to_array(
+			{
+				D3D_FEATURE_LEVEL_11_1,
+				D3D_FEATURE_LEVEL_11_0,
+				D3D_FEATURE_LEVEL_10_1,
+				D3D_FEATURE_LEVEL_10_0,
+				D3D_FEATURE_LEVEL_9_3,
+				D3D_FEATURE_LEVEL_9_2,
+				D3D_FEATURE_LEVEL_9_1
+			}) };
+
+			auto d3d11_device{ &dynamic_cast<ID3D11Device &>(*directx_device) };
+
 			UNEXPECT_IF_FAILED(D3D11CreateDevice
 			(
 				nullptr,
@@ -256,7 +248,7 @@ namespace mfop
 				d3d_feature_levels.data(),
 				static_cast<uint32_t>(d3d_feature_levels.size()),
 				D3D11_SDK_VERSION,
-				reinterpret_cast<ID3D11Device **>(&directx_device),
+				&d3d11_device,
 				nullptr,
 				nullptr
 			));
@@ -270,7 +262,7 @@ namespace mfop
 		return dxgi_device_manager;
 	}
 
-	expected<com_ptr_nothrow<IMFSinkWriter>, error> make_sink_writer(wstring_view output_name, bool const &__restrict is_accelerated, GUID const &__restrict output_video_format) noexcept
+	expected<com_ptr_nothrow<IMFSinkWriter>, error> make_sink_writer(wstring_view output_name, bool const &is_accelerated, GUID const &output_video_format) noexcept
 	{
 		com_ptr_nothrow<IMFAttributes> sink_writer_attributes{};
 		ignore = MFCreateAttributes(out_ptr(sink_writer_attributes), 3);
@@ -296,7 +288,7 @@ namespace mfop
 		return sink_writer;
 	}
 
-	expected<DWORD, error> configure_video_output(IMFSinkWriter &__restrict sink_writer, IMFMediaType &__restrict input_media_type, GUID const &__restrict output_video_format) noexcept
+	expected<DWORD, error> configure_video_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		uint32_t width, height;
 		ignore = MFGetAttributeSize(&input_media_type, MF_MT_FRAME_SIZE, &width, &height);
@@ -334,7 +326,7 @@ namespace mfop
 		return video_index;
 	}
 
-	expected<DWORD, error> configure_audio_output(IMFSinkWriter &__restrict sink_writer, IMFMediaType &__restrict input_media_type, uint32_t const &__restrict output_bit_rate, GUID const &__restrict output_video_format) noexcept
+	expected<DWORD, error> configure_audio_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, uint32_t const &output_bit_rate, GUID const &output_video_format) noexcept
 	{
 		__assume(output_bit_rate <= 3);
 
@@ -354,7 +346,7 @@ namespace mfop
 		return audio_index;
 	}
 
-	expected<HRESULT, error> configure_video_input(IMFSinkWriter &__restrict sink_writer, DWORD const &__restrict index, uint32_t const &__restrict quality, GUID const &__restrict output_video_format, IMFMediaType &__restrict input_media_type) noexcept
+	expected<HRESULT, error> configure_video_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_video_media_type) noexcept
 	{
 		__assume(quality <= 100);
 
@@ -379,12 +371,12 @@ namespace mfop
 			break;
 		}
 
-		UNEXPECT_IF_FAILED(sink_writer.SetInputMediaType(index, &input_media_type, encoder_attributes.get()));
+		UNEXPECT_IF_FAILED(sink_writer.SetInputMediaType(index, &input_video_media_type, encoder_attributes.get()));
 
 		return S_OK;
 	}
 
-	expected<HRESULT, error> configure_audio_input(IMFSinkWriter &__restrict sink_writer, DWORD const &__restrict index, uint32_t const &__restrict quality, GUID const &__restrict output_video_format, IMFMediaType &__restrict input_media_type) noexcept
+	expected<HRESULT, error> configure_audio_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_audio_media_type) noexcept
 	{
 		com_ptr_nothrow<IMFAttributes> encoder_attributes{};
 
@@ -394,12 +386,12 @@ namespace mfop
 			add_windows_media_qvba_activation_media_attributes(*encoder_attributes, quality);
 		}
 
-		UNEXPECT_IF_FAILED(sink_writer.SetInputMediaType(index, &input_media_type, encoder_attributes.get()));
+		UNEXPECT_IF_FAILED(sink_writer.SetInputMediaType(index, &input_audio_media_type, encoder_attributes.get()));
 
 		return S_OK;
 	}
 
-	expected<DWORD, error> configure_video_stream(IMFSinkWriter &__restrict sink_writer, uint32_t const &__restrict quality, IMFMediaType &__restrict input_media_type, GUID const &__restrict output_video_format) noexcept
+	expected<DWORD, error> configure_video_stream(IMFSinkWriter &sink_writer, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		auto const index{ configure_video_output(sink_writer, input_media_type, output_video_format) };
 		SURFACE_IF_UNEXPECTED(index);
@@ -408,7 +400,7 @@ namespace mfop
 		return *index;
 	}
 
-	expected<DWORD, error> configure_audio_stream(IMFSinkWriter &__restrict sink_writer, int32_t const &__restrict output_bit_rate, uint32_t const &__restrict quality, IMFMediaType &__restrict input_media_type, GUID const &__restrict output_video_format) noexcept
+	expected<DWORD, error> configure_audio_stream(IMFSinkWriter &sink_writer, int32_t const &output_bit_rate, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		auto const index{ configure_audio_output(sink_writer, input_media_type, output_bit_rate, output_video_format) };
 		SURFACE_IF_UNEXPECTED(index);
@@ -417,7 +409,7 @@ namespace mfop
 		return *index;
 	}
 
-	expected<stream_indices_t, error> configure_streams(IMFSinkWriter &__restrict sink_writer, uint32_t const &__restrict quality, uint32_t const &__restrict output_bit_rate, IMFMediaTypes const &__restrict input_media_types, GUID const &__restrict output_video_format) noexcept
+	expected<stream_indices_t, error> configure_streams(IMFSinkWriter &sink_writer, uint32_t const &quality, uint32_t const &output_bit_rate, IMFMediaTypes const &input_media_types, GUID const &output_video_format) noexcept
 	{
 		auto const video_index{ configure_video_stream(sink_writer, quality, *input_media_types.first, output_video_format) };
 		SURFACE_IF_UNEXPECTED(video_index);
@@ -428,7 +420,7 @@ namespace mfop
 		return stream_indices_t{ move(*video_index), move(*audio_index) };
 	}
 
-	expected<sink_writer_with_indices_and_media_types_t, error> make_initialized_sink_writer(OUTPUT_INFO const &__restrict oip, GUID const &__restrict output_video_format, output_configuration const &__restrict configuration) noexcept
+	expected<sink_writer_with_indices_and_media_types_t, error> make_initialized_sink_writer(OUTPUT_INFO const &oip, GUID const &output_video_format, output_configuration const &configuration) noexcept
 	{
 		auto const media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
 		auto const sink_writer{ make_sink_writer(oip.savefile, configuration.is_accelerated, output_video_format) };
@@ -441,7 +433,7 @@ namespace mfop
 		return sink_writer_with_indices_and_media_types_t{ move(*sink_writer), move(*indices), move(media_types) };
 	}
 
-	auto write_video_sample(OUTPUT_INFO const &__restrict oip, IMFSinkWriter &__restrict sink_writer, int32_t const &__restrict f, DWORD const &__restrict index, IMFMediaType &__restrict input_media_type, bool const &__restrict is_accelerated, int64_t const &__restrict time_stamp) noexcept
+	auto write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type, bool const &is_accelerated, int64_t const &time_stamp) noexcept
 	{
 		if (oip.func_is_abort()) return E_ABORT;
 
@@ -459,7 +451,7 @@ namespace mfop
 		long stride{};
 		DWORD buffer_size{};
 		ignore = video_2d_buffer->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_begin, &buffer_size);
-		MFCopyImage
+		ignore = MFCopyImage
 		(
 			scanline,
 			stride,
@@ -477,7 +469,7 @@ namespace mfop
 		return write_sample_to_sink_writer(sink_writer, index, *video_buffer, time_stamp * f, time_stamp);
 	}
 
-	auto write_audio_sample(OUTPUT_INFO const &__restrict oip, IMFSinkWriter &__restrict sink_writer, int32_t const &__restrict n, DWORD const &__restrict index, IMFMediaType &__restrict input_media_type, int32_t const &__restrict max_samples) noexcept
+	auto write_audio_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &n, DWORD const &index, IMFMediaType &input_media_type, int32_t const &max_samples) noexcept
 	{
 		if (oip.func_is_abort()) return E_ABORT;
 
@@ -496,7 +488,7 @@ namespace mfop
 		uint8_t *media_data{};
 		DWORD media_data_max_length{};
 		ignore = audio_buffer->Lock(&media_data, &media_data_max_length, nullptr);
-		if (memcpy_s(media_data, media_data_max_length, audio_data, static_cast<size_t>(actual_samples)) != 0) return E_OUTOFMEMORY;
+		if (memcpy_s(media_data, media_data_max_length, audio_data, static_cast<size_t>(actual_samples))) return E_OUTOFMEMORY;
 		ignore = audio_buffer->Unlock();
 
 		ignore = audio_buffer->SetCurrentLength(static_cast<DWORD>(actual_samples));
@@ -504,13 +496,13 @@ namespace mfop
 		return write_sample_to_sink_writer(sink_writer, index, *audio_buffer, sample_time, sample_duration);
 	}
 
-	[[nodiscard]] inline auto MFStartup(DWORD &&__restrict flags = MFSTARTUP_FULL)
+	[[nodiscard]] inline auto MFStartup(DWORD &&flags = MFSTARTUP_FULL)
 	{
 		FAIL_FAST_IF_FAILED(::MFStartup(MF_VERSION, flags));
 		return unique_call<decltype(&::MFShutdown), ::MFShutdown>{};
 	}
 
-	expected<HRESULT, error> output_file(OUTPUT_INFO const &__restrict oip, output_configuration &&__restrict configuration, LOG_HANDLE &__restrict logger)
+	expected<HRESULT, error> output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
 	{
 		auto const com_cleanup{ CoInitializeEx_failfast() };
 		auto const mf_cleanup{ MFStartup() };

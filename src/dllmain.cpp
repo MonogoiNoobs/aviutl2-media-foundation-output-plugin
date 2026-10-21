@@ -16,7 +16,7 @@ import mfop;
 
 static LOG_HANDLE *aviutl_logger;
 
-auto utf8_to_utf16(std::string_view source, wchar_t *__restrict dest = nullptr, std::int32_t const dest_size = 0)
+auto utf8_to_utf16(std::string_view source, wchar_t *dest = nullptr, std::int32_t const dest_size = 0)
 {
 	return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source.data(), static_cast<std::int32_t>(source.size()), dest, dest_size);
 }
@@ -29,7 +29,7 @@ auto string_to_wstring(std::string_view str)
 	return wstr;
 }
 
-auto func_output(OUTPUT_INFO *__restrict oip) noexcept
+auto func_output(OUTPUT_INFO *oip) noexcept
 {
 	using namespace mfop::configure;
 
@@ -67,7 +67,7 @@ auto func_output(OUTPUT_INFO *__restrict oip) noexcept
 	return true;
 }
 
-auto func_config(HWND __restrict window, HINSTANCE __restrict instance)
+auto func_config(HWND window, HINSTANCE instance)
 {
 	mfop::configure::open_dialog(window, instance);
 	return true;
@@ -75,18 +75,18 @@ auto func_config(HWND __restrict window, HINSTANCE __restrict instance)
 
 extern "C"
 {
-	__declspec(dllexport) auto InitializeLogger(LOG_HANDLE *__restrict logger) noexcept
+	__declspec(dllexport) auto InitializeLogger(LOG_HANDLE *logger) noexcept
 	{
 		aviutl_logger = logger;
 	}
 
-	__declspec(dllexport) __declspec(restrict) OUTPUT_PLUGIN_TABLE const * GetOutputPluginTable() noexcept
+	__declspec(dllexport) OUTPUT_PLUGIN_TABLE const * GetOutputPluginTable() noexcept
 	{
 		static OUTPUT_PLUGIN_TABLE constexpr output_plugin_table{
 			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
 			L"Media Foundation 出力",					// プラグインの名前
 			L"MP4 (*.mp4)\0"						"*.mp4\0"
-			 //"Advanced Systems Format (*.wmv)\0"	"*.wmv\0"
+			"Advanced Systems Format (*.wmv)\0"		"*.wmv\0"
 			,
 			L"Natively renders your result with simple preferences.",	// プラグインの情報
 			func_output,									// 出力時に呼ばれる関数へのポインタ
