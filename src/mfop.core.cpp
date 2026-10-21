@@ -395,8 +395,10 @@ namespace mfop
 	{
 		auto const index{ configure_video_output(sink_writer, input_media_type, output_video_format) };
 		SURFACE_IF_UNEXPECTED(index);
+
 		auto const result{ configure_video_input(sink_writer, *index, quality, output_video_format, input_media_type) };
 		SURFACE_IF_UNEXPECTED(result);
+
 		return *index;
 	}
 
@@ -404,8 +406,10 @@ namespace mfop
 	{
 		auto const index{ configure_audio_output(sink_writer, input_media_type, output_bit_rate, output_video_format) };
 		SURFACE_IF_UNEXPECTED(index);
+
 		auto const result{ configure_audio_input(sink_writer, *index, quality, output_video_format, input_media_type) };
 		SURFACE_IF_UNEXPECTED(result);
+
 		return *index;
 	}
 
@@ -423,8 +427,10 @@ namespace mfop
 	expected<sink_writer_with_indices_and_media_types_t, error> make_initialized_sink_writer(OUTPUT_INFO const &oip, GUID const &output_video_format, output_configuration const &configuration) noexcept
 	{
 		auto const media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
+
 		auto const sink_writer{ make_sink_writer(oip.savefile, configuration.is_accelerated, output_video_format) };
 		SURFACE_IF_UNEXPECTED(sink_writer);
+
 		auto const indices{ configure_streams(**sink_writer, configuration.video_quality, configuration.audio_bit_rate, media_types, output_video_format) };
 		SURFACE_IF_UNEXPECTED(indices);
 
@@ -447,6 +453,7 @@ namespace mfop
 		com_ptr_nothrow<IMF2DBuffer2> video_2d_buffer{};
 		RETURN_IF_FAILED(video_buffer.query_to(&video_2d_buffer));
 
+		// Neither buffer_begin nor buffer_size used, but do NOT give Lock2DSize's 4-5th args nullptr or you'll be cooked.
 		uint8_t *scanline{}, *buffer_begin{};
 		long stride{};
 		DWORD buffer_size{};
@@ -462,6 +469,7 @@ namespace mfop
 		);
 		ignore = video_2d_buffer->Unlock2D();
 
+		// MSDN's a bald-faced liar and seriously values redundancy.
 		DWORD contiguous_length{};
 		ignore = video_2d_buffer->GetContiguousLength(&contiguous_length);
 		ignore = video_buffer->SetCurrentLength(contiguous_length);
@@ -487,7 +495,7 @@ namespace mfop
 
 		uint8_t *media_data{};
 		DWORD media_data_max_length{};
-		ignore = audio_buffer->Lock(&media_data, &media_data_max_length, nullptr);
+		ignore = audio_buffer->Lock(&media_data, &media_data_max_length, nullptr); // Despite Lock2DSize, the 3rd arg set null, but MSDN says it's OK.
 		if (memcpy_s(media_data, media_data_max_length, audio_data, static_cast<size_t>(actual_samples))) return E_OUTOFMEMORY;
 		ignore = audio_buffer->Unlock();
 
