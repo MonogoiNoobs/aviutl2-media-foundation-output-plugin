@@ -52,7 +52,7 @@ namespace mfop
 {
 	auto const constinit audio_bits_per_sample{ 16 };
 
-	auto const constinit NO_STREAM_PREPARED{ -1 };
+	auto const constinit null_stream_index{ -1 };
 
 	using nv12_ptr = unique_ptr<uint8_t[]>;
 	using resolution_t = pair<int32_t const, int32_t const>;
@@ -61,29 +61,24 @@ namespace mfop
 	using IMFMediaTypes = pair<com_ptr_nothrow<IMFMediaType>, com_ptr_nothrow<IMFMediaType>>;
 	using sink_writer_with_indices_and_media_types_t = tuple<com_ptr_nothrow<IMFSinkWriter>, stream_indices_t const, IMFMediaTypes const>;
 
-	auto yuy2_to_nv12(uint8_t const *yuy2, resolution_t &&resolution)
+	auto yuy2_to_nv12(span<uint8_t> yuy2, size_t const stride)
 	{
-		__assume(resolution.first % 2 == 0 and resolution.second % 2 == 0);
+		auto const image_size{ yuy2.size() / 2 };
 
-		auto const [width, height] { resolution };
+		auto nv12{ make_unique_for_overwrite<nv12_ptr::element_type[]>(image_size * 3 / 2) };
 
-		auto const image_size{ static_cast<size_t>(width * height) };
-		auto const stride{ width * 2 };
+		auto nv12_y{ nv12.get() }, nv12_uv{ nv12.get() + image_size };
 
-		auto output{ make_unique_for_overwrite<nv12_ptr::element_type[]>(image_size * 3 / 2) };
+		for (auto i{ 0uz }; i < yuy2.size(); i += 2) *nv12_y++ = yuy2[i];
 
-		auto y{ output.get() }, uv{ output.get() + image_size };
-
-		for (auto i{ 0 }; i < stride * height; i += 2) *y++ = yuy2[i];
-
-		for (auto current_height{ 0 }; current_height < height; current_height += 2)
-			for (auto i{ 0 }, current_scanline{ stride * current_height }; i < stride; i += 4)
+		for (auto current_height{ 0uz }; current_height < yuy2.size() / stride; current_height += 2)
+			for (auto i{ 0uz }, current_scanline{ stride * current_height }; i < stride; i += 4)
 			{
-				*uv++ = yuy2[current_scanline + i + 1];
-				*uv++ = yuy2[current_scanline + i + 3];
+				*nv12_uv++ = yuy2[current_scanline + i + 1];
+				*nv12_uv++ = yuy2[current_scanline + i + 3];
 			}
 
-		return output;
+		return nv12;
 	}
 
 	auto constexpr get_pcm_block_alignment(int32_t const &audio_ch, uint32_t &&bit) noexcept
@@ -113,7 +108,7 @@ namespace mfop
 		return result;
 	}
 
-	auto get_suitable_output_video_format_guid(filesystem::path &&extension, bool const &is_hevc_preferable) noexcept
+	auto get_suitable_output_video_format_guid(filesystem::path const &extension, bool const &is_hevc_preferable) noexcept
 	{
 		if (extension == L".mp4") return is_hevc_preferable ? MFVideoFormat_HEVC : MFVideoFormat_H264;
 		if (extension == L".wmv") return MFVideoFormat_WVC1;
@@ -418,7 +413,7 @@ namespace mfop
 
 	expected<stream_indices_t, error> configure_streams(IMFSinkWriter &sink_writer, uint32_t const &quality, uint32_t const &output_bit_rate, IMFMediaTypes const &input_media_types, GUID const &output_video_format) noexcept
 	{
-		expected<DWORD, error> video_index{ NO_STREAM_PREPARED }, audio_index{ NO_STREAM_PREPARED };
+		expected<DWORD, error> video_index{ null_stream_index }, audio_index{ null_stream_index };
 
 		if (input_media_types.first)
 		{
@@ -439,8 +434,10 @@ namespace mfop
 	{
 		auto output_video_format{ GUID_NULL };
 
-		if ((oip.flag bitand oip.FLAG_VIDEO) and (filesystem::path{ oip.savefile }.extension() not_eq L".wma"))
-			output_video_format = get_suitable_output_video_format_guid(filesystem::path{ oip.savefile }.extension(), configuration.is_hevc_preferable);
+		auto const extension{ filesystem::path{ oip.savefile }.extension() };
+
+		if ((oip.flag bitand oip.FLAG_VIDEO) and not (extension == L".wma" or extension == L".m4a"))
+			output_video_format = get_suitable_output_video_format_guid(extension, configuration.is_hevc_preferable);
 
 		auto const media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
 
@@ -461,7 +458,7 @@ namespace mfop
 
 		oip.func_rest_time_disp(f, oip.n);
 
-		auto const frame_image{ static_cast<uint8_t *>(oip.func_get_video(f, FCC('YUY2'))) };
+		auto const frame_image{ span{ static_cast<uint8_t *>(oip.func_get_video(f, FCC('YUY2'))), static_cast<size_t>(oip.w * oip.h * 2) } };
 
 		com_ptr_nothrow<IMFMediaBuffer> video_buffer{};
 		RETURN_IF_FAILED(MFCreateMediaBufferFromMediaType(&input_media_type, time_stamp, 0, 0, out_ptr(video_buffer)));
@@ -478,7 +475,7 @@ namespace mfop
 		(
 			scanline,
 			stride,
-			is_accelerated ? yuy2_to_nv12(frame_image, { oip.w, oip.h }).get() : frame_image,
+			is_accelerated ? yuy2_to_nv12(frame_image, static_cast<size_t>(oip.w) * 2).get() : &frame_image.front(),
 			stride,
 			stride,
 			is_accelerated ? oip.h * 3 / 2 : oip.h
@@ -529,7 +526,7 @@ namespace mfop
 	expected<HRESULT, error> output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
 	{
 		if (not oip.flag) [[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: no input found" } };
-		if (not (oip.flag bitand oip.FLAG_AUDIO) and (filesystem::path{ oip.savefile }.extension() == L".wma"))
+		if (not (oip.flag bitand oip.FLAG_AUDIO) and (filesystem::path{ oip.savefile }.extension() == L".wma" or filesystem::path{ oip.savefile }.extension() == L".m4a"))
 			[[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: you've just tried to output audio WITHOUT audio" } };
 
 		auto const com_cleanup{ CoInitializeEx_failfast() };
@@ -546,7 +543,7 @@ namespace mfop
 
 		auto aeternum{ S_OK };
 
-		if (indices.first not_eq NO_STREAM_PREPARED)
+		if (indices.first not_eq null_stream_index)
 		{
 			aviutl_logger->info(aviutl_logger, L"Video stream found; sending samples to the writer...");
 
@@ -557,7 +554,7 @@ namespace mfop
 					goto abort;
 		}
 
-		if (indices.second not_eq NO_STREAM_PREPARED)
+		if (indices.second not_eq null_stream_index)
 		{
 			aviutl_logger->info(aviutl_logger, L"Audio stream found; sending samples to the writer...");
 

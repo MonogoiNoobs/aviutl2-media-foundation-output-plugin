@@ -85,13 +85,15 @@ extern "C"
 		static OUTPUT_PLUGIN_TABLE constexpr output_plugin_table{
 			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
 			L"Media Foundation 出力",					// プラグインの名前
-			L"MP4 (*.mp4)\0"								"*.mp4\0"
-			"Advanced Systems Format (*.wmv; *.wma)\0"		"*.wmv; *.wma\0"
+			L"MP4 (*.mp4; *.m4a)\0"							"*.mp4;*.m4a\0"
+			"Advanced Systems Format (*.wmv; *.wma)\0"		"*.wmv;*.wma\0"
 			,
 			L"Natively renders your result with simple preferences.",	// プラグインの情報
 			func_output,									// 出力時に呼ばれる関数へのポインタ
 			func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 			nullptr,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
+			nullptr,
+			nullptr,
 		};
 		return &output_plugin_table;
 	}
