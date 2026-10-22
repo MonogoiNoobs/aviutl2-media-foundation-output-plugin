@@ -53,7 +53,7 @@ auto func_output(OUTPUT_INFO *oip) noexcept
 			aviutl_logger,
 			std::format
 			(
-				L"FAILED TO OUTPUT: {} ({}) in {}.",
+				L"FAILED TO OUTPUT: {} ({}, in {})",
 				string_to_wstring(std::system_category().message(succeeded.error().code)),
 				succeeded.error().code,
 				string_to_wstring(succeeded.error().where)
@@ -85,8 +85,8 @@ extern "C"
 		static OUTPUT_PLUGIN_TABLE constexpr output_plugin_table{
 			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
 			L"Media Foundation 出力",					// プラグインの名前
-			L"MP4 (*.mp4)\0"						"*.mp4\0"
-			"Advanced Systems Format (*.wmv)\0"		"*.wmv\0"
+			L"MP4 (*.mp4)\0"								"*.mp4\0"
+			"Advanced Systems Format (*.wmv; *.wma)\0"		"*.wmv; *.wma\0"
 			,
 			L"Natively renders your result with simple preferences.",	// プラグインの情報
 			func_output,									// 出力時に呼ばれる関数へのポインタ

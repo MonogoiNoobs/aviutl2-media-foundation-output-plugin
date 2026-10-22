@@ -35,7 +35,7 @@ module;
 		if (FAILED(__mfop_hr)) [[unlikely]] return std::unexpected{ mfop::error{ __mfop_hr, #hr } }; \
 } while (0)
 
-#define SURFACE_IF_UNEXPECTED(__mfop_expected) do { \
+#define RETURN_IF_UNEXPECTED(__mfop_expected) do { \
 	if (not __mfop_expected) [[unlikely]] return unexpected{ __mfop_expected.error() }; \
 } while (0)
 
@@ -51,6 +51,8 @@ static LOG_HANDLE *aviutl_logger;
 namespace mfop
 {
 	auto const constinit audio_bits_per_sample{ 16 };
+
+	auto const constinit NO_STREAM_PREPARED{ -1 };
 
 	using nv12_ptr = unique_ptr<uint8_t[]>;
 	using resolution_t = pair<int32_t const, int32_t const>;
@@ -174,7 +176,7 @@ namespace mfop
 		return input_video_media_type;
 	}
 
-	auto make_input_audio_media_type(int32_t const &channel_count, int32_t const &sampling_rate, GUID const &output_video_format) noexcept
+	auto make_input_audio_media_type(int32_t const &channel_count, int32_t const &sampling_rate, bool const &is_asf) noexcept
 	{
 		com_ptr_nothrow<IMFMediaType> input_audio_media_type{};
 		ignore = MFCreateMediaType(out_ptr(input_audio_media_type));
@@ -185,22 +187,23 @@ namespace mfop
 		ignore = input_audio_media_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channel_count);
 		ignore = input_audio_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true);
 
-		if (output_video_format == MFVideoFormat_WVC1)
+		if (is_asf)
 		{
 			auto const block_alignment{ get_pcm_block_alignment(channel_count, audio_bits_per_sample) };
 			ignore = input_audio_media_type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, block_alignment);
 			ignore = input_audio_media_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, block_alignment * sampling_rate);
 			ignore = input_audio_media_type->SetUINT32(MF_MT_AVG_BITRATE, sampling_rate * audio_bits_per_sample * channel_count);
 		}
+
 		return input_audio_media_type;
 	}
 
-	auto make_input_media_types(OUTPUT_INFO const &oip, GUID const &output_video_format, bool const &is_accelerated) noexcept
+	auto make_input_media_types(OUTPUT_INFO const &oip, GUID const &output_video_format = GUID_NULL, bool const &is_accelerated = false) noexcept
 	{
 		return IMFMediaTypes
 		{
-			make_input_video_media_type({ oip.w, oip.h },{ oip.rate, oip.scale }, is_accelerated),
-			make_input_audio_media_type(oip.audio_ch, oip.audio_rate, output_video_format)
+			(oip.flag bitand oip.FLAG_VIDEO) and not IsEqualGUID(output_video_format, GUID_NULL) ? make_input_video_media_type({ oip.w, oip.h },{ oip.rate, oip.scale }, is_accelerated) : nullptr,
+			oip.flag bitand oip.FLAG_AUDIO ? make_input_audio_media_type(oip.audio_ch, oip.audio_rate, output_video_format.Data1 == FCC('WVC1')) : nullptr
 		};
 	}
 
@@ -269,7 +272,7 @@ namespace mfop
 
 		ignore = sink_writer_attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, true);
 
-		if (output_video_format == MFVideoFormat_H264)
+		if (output_video_format.Data1 == FCC('H264'))
 		{
 			ignore = sink_writer_attributes->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_FMPEG4);
 			ignore = sink_writer_attributes->SetUINT32(MF_MPEG4SINK_MOOV_BEFORE_MDAT, true);
@@ -380,7 +383,7 @@ namespace mfop
 	{
 		com_ptr_nothrow<IMFAttributes> encoder_attributes{};
 
-		if (output_video_format == MFVideoFormat_WVC1)
+		if (output_video_format.Data1 == FCC('WVC1'))
 		{
 			ignore = MFCreateAttributes(out_ptr(encoder_attributes), 3);
 			add_windows_media_qvba_activation_media_attributes(*encoder_attributes, quality);
@@ -394,10 +397,10 @@ namespace mfop
 	expected<DWORD, error> configure_video_stream(IMFSinkWriter &sink_writer, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		auto const index{ configure_video_output(sink_writer, input_media_type, output_video_format) };
-		SURFACE_IF_UNEXPECTED(index);
+		RETURN_IF_UNEXPECTED(index);
 
 		auto const result{ configure_video_input(sink_writer, *index, quality, output_video_format, input_media_type) };
-		SURFACE_IF_UNEXPECTED(result);
+		RETURN_IF_UNEXPECTED(result);
 
 		return *index;
 	}
@@ -405,34 +408,47 @@ namespace mfop
 	expected<DWORD, error> configure_audio_stream(IMFSinkWriter &sink_writer, int32_t const &output_bit_rate, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		auto const index{ configure_audio_output(sink_writer, input_media_type, output_bit_rate, output_video_format) };
-		SURFACE_IF_UNEXPECTED(index);
+		RETURN_IF_UNEXPECTED(index);
 
 		auto const result{ configure_audio_input(sink_writer, *index, quality, output_video_format, input_media_type) };
-		SURFACE_IF_UNEXPECTED(result);
+		RETURN_IF_UNEXPECTED(result);
 
 		return *index;
 	}
 
 	expected<stream_indices_t, error> configure_streams(IMFSinkWriter &sink_writer, uint32_t const &quality, uint32_t const &output_bit_rate, IMFMediaTypes const &input_media_types, GUID const &output_video_format) noexcept
 	{
-		auto const video_index{ configure_video_stream(sink_writer, quality, *input_media_types.first, output_video_format) };
-		SURFACE_IF_UNEXPECTED(video_index);
+		expected<DWORD, error> video_index{ NO_STREAM_PREPARED }, audio_index{ NO_STREAM_PREPARED };
 
-		auto const audio_index{ configure_audio_stream(sink_writer, output_bit_rate, quality, *input_media_types.second, output_video_format) };
-		SURFACE_IF_UNEXPECTED(audio_index);
+		if (input_media_types.first)
+		{
+			video_index = configure_video_stream(sink_writer, quality, *input_media_types.first, output_video_format);
+			RETURN_IF_UNEXPECTED(video_index);
+		}
+
+		if (input_media_types.second)
+		{
+			audio_index = configure_audio_stream(sink_writer, output_bit_rate, quality, *input_media_types.second, output_video_format);
+			RETURN_IF_UNEXPECTED(audio_index);
+		}
 
 		return stream_indices_t{ move(*video_index), move(*audio_index) };
 	}
 
-	expected<sink_writer_with_indices_and_media_types_t, error> make_initialized_sink_writer(OUTPUT_INFO const &oip, GUID const &output_video_format, output_configuration const &configuration) noexcept
+	expected<sink_writer_with_indices_and_media_types_t, error> make_initialized_sink_writer(OUTPUT_INFO const &oip, output_configuration const &configuration) noexcept
 	{
+		auto output_video_format{ GUID_NULL };
+
+		if ((oip.flag bitand oip.FLAG_VIDEO) and (filesystem::path{ oip.savefile }.extension() not_eq L".wma"))
+			output_video_format = get_suitable_output_video_format_guid(filesystem::path{ oip.savefile }.extension(), configuration.is_hevc_preferable);
+
 		auto const media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
 
 		auto const sink_writer{ make_sink_writer(oip.savefile, configuration.is_accelerated, output_video_format) };
-		SURFACE_IF_UNEXPECTED(sink_writer);
+		RETURN_IF_UNEXPECTED(sink_writer);
 
 		auto const indices{ configure_streams(**sink_writer, configuration.video_quality, configuration.audio_bit_rate, media_types, output_video_format) };
-		SURFACE_IF_UNEXPECTED(indices);
+		RETURN_IF_UNEXPECTED(indices);
 
 		UNEXPECT_IF_FAILED((*sink_writer)->BeginWriting());
 
@@ -512,31 +528,38 @@ namespace mfop
 
 	expected<HRESULT, error> output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
 	{
+		if (not oip.flag) [[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: no input found" } };
+		if (not (oip.flag bitand oip.FLAG_AUDIO) and (filesystem::path{ oip.savefile }.extension() == L".wma"))
+			[[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: you've just tried to output audio WITHOUT audio" } };
+
 		auto const com_cleanup{ CoInitializeEx_failfast() };
 		auto const mf_cleanup{ MFStartup() };
 
 		aviutl_logger = &logger;
 
-		auto const output_video_format{ get_suitable_output_video_format_guid(filesystem::path(oip.savefile).extension(), configuration.is_hevc_preferable) };
-
-		auto sink_writer_with_indices{ make_initialized_sink_writer(oip, output_video_format, configuration) };
-		if (!sink_writer_with_indices) [[unlikely]] return unexpected{ sink_writer_with_indices.error() };
+		auto sink_writer_with_indices{ make_initialized_sink_writer(oip, configuration) };
+		RETURN_IF_UNEXPECTED(sink_writer_with_indices);
 
 		auto const [sink_writer, indices, input_media_types] { *sink_writer_with_indices };
 
 		oip.func_set_buffer_size(8, 8);
 
-		aviutl_logger->info(aviutl_logger, L"Sending video samples to the writer...");
-
-		auto const video_time_stamp{ get_average_time_per_frame(*input_media_types.first) };
-
 		auto aeternum{ S_OK };
 
-		for (auto f{ 0 }; f < oip.n; ++f)
-			if ((aeternum = write_video_sample(oip, *sink_writer, f, indices.first, *input_media_types.first, configuration.is_accelerated, video_time_stamp)) < 0)
-				goto abort;
+		if (indices.first not_eq NO_STREAM_PREPARED)
 		{
-			aviutl_logger->info(aviutl_logger, L"Sending audio samples to the writer...");
+			aviutl_logger->info(aviutl_logger, L"Video stream found; sending samples to the writer...");
+
+			auto const video_time_stamp{ get_average_time_per_frame(*input_media_types.first) };
+
+			for (auto f{ 0 }; f < oip.n; ++f)
+				if ((aeternum = write_video_sample(oip, *sink_writer, f, indices.first, *input_media_types.first, configuration.is_accelerated, video_time_stamp)) < 0)
+					goto abort;
+		}
+
+		if (indices.second not_eq NO_STREAM_PREPARED)
+		{
+			aviutl_logger->info(aviutl_logger, L"Audio stream found; sending samples to the writer...");
 
 			auto const audio_max_samples{ static_cast<int32_t>(get_pcm_block_alignment(oip.audio_ch, audio_bits_per_sample) * oip.audio_rate) };
 
@@ -544,6 +567,7 @@ namespace mfop
 				if ((aeternum = write_audio_sample(oip, *sink_writer, n, indices.second, *input_media_types.second, audio_max_samples)) < 0)
 					break;
 		}
+
 	abort:
 		aviutl_logger->info(aviutl_logger, SUCCEEDED(aeternum) ? L"Finalizing. It may take a while..." : L"Aborting...");
 		UNEXPECT_IF_FAILED(sink_writer->Finalize());
