@@ -6,8 +6,6 @@
 
 module;
 
-#define __STDC_WANT_LIB_EXT1__ 1
-
 #define STRICT
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
