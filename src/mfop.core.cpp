@@ -61,7 +61,7 @@ namespace mfop
 	using IMFMediaTypes = pair<com_ptr_nothrow<IMFMediaType>, com_ptr_nothrow<IMFMediaType>>;
 	using sink_writer_with_indices_and_media_types_t = tuple<com_ptr_nothrow<IMFSinkWriter>, stream_indices_t const, IMFMediaTypes const>;
 
-	auto yuy2_to_nv12(span<uint8_t> yuy2, size_t const stride)
+	auto yuy2_to_nv12(span<uint8_t> yuy2, size_t const yuy2_stride)
 	{
 		auto const image_size{ yuy2.size() / 2 };
 
@@ -71,8 +71,8 @@ namespace mfop
 
 		for (auto i{ 0uz }; i < yuy2.size(); i += 2) *nv12_y++ = yuy2[i];
 
-		for (auto current_height{ 0uz }; current_height < yuy2.size() / stride; current_height += 2)
-			for (auto i{ 0uz }, current_scanline{ stride * current_height }; i < stride; i += 4)
+		for (auto current_height{ 0uz }; current_height < yuy2.size() / yuy2_stride; current_height += 2)
+			for (auto i{ 0uz }, current_scanline{ yuy2_stride * current_height }; i < yuy2_stride; i += 4)
 			{
 				*nv12_uv++ = yuy2[current_scanline + i + 1];
 				*nv12_uv++ = yuy2[current_scanline + i + 3];
@@ -110,7 +110,7 @@ namespace mfop
 
 	auto get_suitable_output_video_format_guid(filesystem::path const &extension, bool const &is_hevc_preferable) noexcept
 	{
-		if (extension == L".mp4") return is_hevc_preferable ? MFVideoFormat_HEVC : MFVideoFormat_H264;
+		if (extension == L".mp4") [[likely]] return is_hevc_preferable ? MFVideoFormat_HEVC : MFVideoFormat_H264;
 		if (extension == L".wmv") return MFVideoFormat_WVC1;
 		return MFVideoFormat_H264;
 	}
@@ -126,7 +126,7 @@ namespace mfop
 	{
 		ignore = media_type.SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
 
-		if (height <= 720)
+		if (height <= 720) [[unlikely]]
 		{
 			aviutl_logger->info(aviutl_logger, L"Color space desires BT.601.");
 			ignore = media_type.SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_SMPTE170M);
@@ -267,7 +267,7 @@ namespace mfop
 
 		ignore = sink_writer_attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, true);
 
-		if (output_video_format.Data1 == FCC('H264'))
+		if (output_video_format.Data1 == FCC('H264')) [[likely]]
 		{
 			ignore = sink_writer_attributes->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_FMPEG4);
 			ignore = sink_writer_attributes->SetUINT32(MF_MPEG4SINK_MOOV_BEFORE_MDAT, true);
@@ -306,7 +306,7 @@ namespace mfop
 
 		switch (output_video_format.Data1)
 		{
-		case FCC('H264'):
+		[[likely]] case FCC('H264'):
 			ignore = output_video_media_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High);
 			break;
 		case FCC('HEVC'):
@@ -354,7 +354,7 @@ namespace mfop
 		switch (output_video_format.Data1)
 		{
 		default:
-		case FCC('H264'):
+		[[likely]] case FCC('H264'):
 			ignore = encoder_attributes->SetUINT32(CODECAPI_AVEncH264CABACEnable, true);
 			[[fallthrough]];
 		case FCC('HEVC'):
@@ -415,13 +415,13 @@ namespace mfop
 	{
 		expected<DWORD, error> video_index{ null_stream_index }, audio_index{ null_stream_index };
 
-		if (input_media_types.first)
+		if (input_media_types.first) [[likely]]
 		{
 			video_index = configure_video_stream(sink_writer, quality, *input_media_types.first, output_video_format);
 			RETURN_IF_UNEXPECTED(video_index);
 		}
 
-		if (input_media_types.second)
+		if (input_media_types.second) [[likely]]
 		{
 			audio_index = configure_audio_stream(sink_writer, output_bit_rate, quality, *input_media_types.second, output_video_format);
 			RETURN_IF_UNEXPECTED(audio_index);
@@ -475,7 +475,7 @@ namespace mfop
 		(
 			scanline,
 			stride,
-			is_accelerated ? yuy2_to_nv12(frame_image, static_cast<size_t>(oip.w) * 2).get() : &frame_image.front(),
+			is_accelerated ? yuy2_to_nv12(frame_image, static_cast<size_t>(oip.w) * 2).get() : frame_image.data(),
 			stride,
 			stride,
 			is_accelerated ? oip.h * 3 / 2 : oip.h
@@ -497,7 +497,7 @@ namespace mfop
 		oip.func_rest_time_disp(n, oip.audio_n);
 
 		int32_t actual_samples{};
-		auto const audio_data{ oip.func_get_audio(n, max_samples, &actual_samples, WAVE_FORMAT_PCM) };
+		auto const audio_data{ static_cast<uint8_t *>(oip.func_get_audio(n, max_samples, &actual_samples, WAVE_FORMAT_PCM)) };
 		if (not actual_samples) return S_FALSE;
 
 		auto const sample_duration{ static_cast<int64_t>(actual_samples) * 10'000'000LL / max_samples };
@@ -509,7 +509,7 @@ namespace mfop
 		uint8_t *media_data{};
 		DWORD media_data_max_length{};
 		ignore = audio_buffer->Lock(&media_data, &media_data_max_length, nullptr); // Despite Lock2DSize, the 3rd arg set null, but MSDN says it's OK.
-		if (memcpy_s(media_data, media_data_max_length, audio_data, static_cast<size_t>(actual_samples))) return E_OUTOFMEMORY;
+		ignore = copy_n(audio_data, static_cast<size_t>(actual_samples), media_data);
 		ignore = audio_buffer->Unlock();
 
 		ignore = audio_buffer->SetCurrentLength(static_cast<DWORD>(actual_samples));
@@ -543,7 +543,7 @@ namespace mfop
 
 		auto aeternum{ S_OK };
 
-		if (indices.first not_eq null_stream_index)
+		if (indices.first not_eq null_stream_index) [[likely]]
 		{
 			aviutl_logger->info(aviutl_logger, L"Video stream found; sending samples to the writer...");
 
@@ -554,7 +554,7 @@ namespace mfop
 					goto abort;
 		}
 
-		if (indices.second not_eq null_stream_index)
+		if (indices.second not_eq null_stream_index) [[likely]]
 		{
 			aviutl_logger->info(aviutl_logger, L"Audio stream found; sending samples to the writer...");
 

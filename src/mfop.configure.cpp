@@ -71,7 +71,7 @@ namespace mfop
 		}
 
 		template<typename Key>
-		bool set(int32_t &&__restrict value) noexcept
+		bool set(int32_t &&value) noexcept
 		{
 			if (is_same<Key, audio_bit_rate>::value)
 				return WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).c_str(), configuration_ini_path);
