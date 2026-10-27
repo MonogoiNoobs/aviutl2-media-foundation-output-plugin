@@ -6,7 +6,6 @@
 
 module;
 
-#define STRICT
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
@@ -41,14 +40,14 @@ namespace mfop
 		template<typename Key>
 		int32_t consteval get_default() noexcept
 		{
-			if (is_same<Key, video_quality>::value)
+			if (same_as<Key, video_quality>)
 				return 70;
-			if (is_same<Key, audio_bit_rate>::value)
+			if (same_as<Key, audio_bit_rate>)
 				return to_underlying(audio_bit_rates::kbps_192);
-			if (is_same<Key, is_accelerated>::value)
+			if (same_as<Key, is_accelerated>)
 				return BST_UNCHECKED;
 
-			if (is_same<Key, is_hevc_preferable>::value)
+			if (same_as<Key, is_hevc_preferable>)
 				return FALSE;
 
 			unreachable();
@@ -57,15 +56,15 @@ namespace mfop
 		template<typename Key>
 		underlying_type<Key>::type get() noexcept
 		{
-			if (is_same<Key, video_quality>::value)
+			if (same_as<Key, video_quality>)
 				return GetPrivateProfileIntW(L"general", L"videoQuality", get_default<Key>(), configuration_ini_path);
-			if (is_same<Key, audio_bit_rate>::value)
+			if (same_as<Key, audio_bit_rate>)
 				return GetPrivateProfileIntW(L"general", L"audioBitRate", get_default<Key>(), configuration_ini_path);
-			if (is_same<Key, is_accelerated>::value)
-				return GetPrivateProfileIntW(L"general", L"useHardware", get_default<Key>(), configuration_ini_path) == BST_CHECKED;
+			if (same_as<Key, is_accelerated>)
+				return cmp_equal(GetPrivateProfileIntW(L"general", L"useHardware", get_default<Key>(), configuration_ini_path), BST_CHECKED);
 
-			if (is_same<Key, is_hevc_preferable>::value)
-				return GetPrivateProfileIntW(L"mp4", L"videoFormat", get_default<Key>(), configuration_ini_path) == TRUE;
+			if (same_as<Key, is_hevc_preferable>)
+				return cmp_equal(GetPrivateProfileIntW(L"mp4", L"videoFormat", get_default<Key>(), configuration_ini_path), TRUE);
 
 			unreachable();
 		}
@@ -73,14 +72,14 @@ namespace mfop
 		template<typename Key>
 		bool set(int32_t &&value) noexcept
 		{
-			if (is_same<Key, audio_bit_rate>::value)
+			if (same_as<Key, audio_bit_rate>)
 				return WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).c_str(), configuration_ini_path);
-			if (is_same<Key, video_quality>::value)
+			if (same_as<Key, video_quality>)
 				return WritePrivateProfileStringW(L"general", L"videoQuality", to_wstring(value).c_str(), configuration_ini_path);
-			if (is_same<Key, is_accelerated>::value)
-				return WritePrivateProfileStringW(L"general", L"useHardware", value == BST_CHECKED ? L"1" : L"0", configuration_ini_path);
+			if (same_as<Key, is_accelerated>)
+				return WritePrivateProfileStringW(L"general", L"useHardware", cmp_equal(value, BST_CHECKED) ? L"1" : L"0", configuration_ini_path);
 
-			if (is_same<Key, is_hevc_preferable>::value)
+			if (same_as<Key, is_hevc_preferable>)
 				return WritePrivateProfileStringW(L"mp4", L"videoFormat", to_wstring(value).c_str(), configuration_ini_path);
 
 			unreachable();
@@ -111,7 +110,7 @@ namespace mfop
 			switch (id)
 			{
 			case IDNO:
-				if (MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO | MB_ICONWARNING) == IDYES)
+				if (cmp_equal(MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO bitor MB_ICONWARNING), IDYES))
 				{
 					ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get_default<is_hevc_preferable>());
 					ignore = SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).c_str());
@@ -121,7 +120,7 @@ namespace mfop
 				break;
 			case IDOK:
 				ignore = set<is_hevc_preferable>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO2)));
-				ignore = set<video_quality>(std::min(100u, std::max(1u, GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false))));
+				ignore = set<video_quality>(clamp(GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false), 1u, 100u));
 
 				ignore = set<audio_bit_rate>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO1)));
 				ignore = set<is_accelerated>(Button_GetCheck(GetDlgItem(dialog, IDC_CHECK1)));

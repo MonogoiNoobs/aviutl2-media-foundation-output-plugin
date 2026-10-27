@@ -4,7 +4,6 @@
  * \author		Shion Yorigami <62567343+MonogoiNoobs@users.noreply.github.com>
  */
 
-#define STRICT
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
@@ -83,7 +82,7 @@ extern "C"
 	__declspec(dllexport) OUTPUT_PLUGIN_TABLE const * GetOutputPluginTable() noexcept
 	{
 		static OUTPUT_PLUGIN_TABLE constexpr output_plugin_table{
-			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO | OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
+			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO bitor OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
 			L"Media Foundation 出力",					// プラグインの名前
 			L"MP4 (*.mp4; *.m4a)\0"							"*.mp4;*.m4a\0"
 			"Advanced Systems Format (*.wmv; *.wma)\0"		"*.wmv;*.wma\0"
