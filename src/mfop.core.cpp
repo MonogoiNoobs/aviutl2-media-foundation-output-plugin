@@ -19,6 +19,8 @@ module;
 #include "aviutl2_sdk/output2.h"
 #include "aviutl2_sdk/logger2.h"
 
+#include <ranges>
+
 #pragma comment(lib, "Mfplat")
 #pragma comment(lib, "Mfreadwrite")
 #pragma comment(lib, "Mfuuid")
@@ -58,21 +60,24 @@ namespace mfop
 	using IMFMediaTypes = pair<com_ptr_nothrow<IMFMediaType>, com_ptr_nothrow<IMFMediaType>>;
 	using sink_writer_with_indices_and_media_types_t = tuple<com_ptr_nothrow<IMFSinkWriter>, stream_indices_t const, IMFMediaTypes const>;
 
-	auto yuy2_to_nv12(span<std::byte const> yuy2, size_t const yuy2_stride)
+	auto yuy2_to_nv12(ranges::constant_range auto &&yuy2, size_t const yuy2_stride)
 	{
+		static auto const constinit take_y{ views::stride(2) };
+		static auto constexpr take_necessary_uv{ [](size_t const &yuy2_stride) {
+			return views::chunk(yuy2_stride)
+				| views::stride(2)
+				| views::join
+				| views::drop(1)
+				| views::stride(2);
+		} };
+
 		auto const image_size{ yuy2.size() / 2 };
 
 		nv12_ptr nv12{};
 		nv12.reserve(image_size * 3 / 2);
 
-		for (auto i{ 0uz }; cmp_less(i, yuy2.size()); i += 2) nv12.push_back(yuy2[i]);
-
-		for (auto current_height{ 0uz }; cmp_less(current_height, yuy2.size() / yuy2_stride); current_height += 2)
-			for (auto i{ 0uz }, current_scanline{ yuy2_stride * current_height }; cmp_less(i, yuy2_stride); i += 4)
-			{
-				nv12.push_back(yuy2[current_scanline + i + 1]);
-				nv12.push_back(yuy2[current_scanline + i + 3]);
-			}
+		nv12.append_range(yuy2 | take_y);
+		nv12.append_range(yuy2 | take_necessary_uv(yuy2_stride));
 
 		return nv12;
 	}
@@ -106,8 +111,8 @@ namespace mfop
 
 	auto get_suitable_output_video_format_guid(filesystem::path const &extension, bool const &is_hevc_preferable) noexcept
 	{
-		if (extension == L".mp4") [[likely]] return is_hevc_preferable ? MFVideoFormat_HEVC : MFVideoFormat_H264;
-		if (extension == L".wmv") return MFVideoFormat_WVC1;
+		if (extension == ".mp4") [[likely]] return is_hevc_preferable ? MFVideoFormat_HEVC : MFVideoFormat_H264;
+		if (extension == ".wmv") return MFVideoFormat_WVC1;
 		return MFVideoFormat_H264;
 	}
 
@@ -322,7 +327,7 @@ namespace mfop
 
 	expected<DWORD, error> configure_audio_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, uint32_t const &output_bit_rate, GUID const &output_video_format) noexcept
 	{
-		__assume(output_bit_rate <= 3);
+		__assume(cmp_less_equal(output_bit_rate, 3));
 
 		auto output_audio_media_type{ com_ptr_nothrow<IMFMediaType>{} };
 		ignore = MFCreateMediaType(out_ptr(output_audio_media_type));
@@ -342,7 +347,7 @@ namespace mfop
 
 	expected<HRESULT, error> configure_video_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_video_media_type) noexcept
 	{
-		__assume(quality <= 100);
+		__assume(cmp_less_equal(quality, 100));
 
 		com_ptr_nothrow<IMFAttributes> encoder_attributes{};
 		ignore = MFCreateAttributes(out_ptr(encoder_attributes), 5);
@@ -432,7 +437,7 @@ namespace mfop
 
 		auto const extension{ filesystem::path{ oip.savefile }.extension() };
 
-		if ((oip.flag bitand oip.FLAG_VIDEO) and not (extension == L".wma" or extension == L".m4a"))
+		if ((oip.flag bitand oip.FLAG_VIDEO) and not (extension == ".wma" or extension == ".m4a"))
 			output_video_format = get_suitable_output_video_format_guid(extension, configuration.is_hevc_preferable);
 
 		auto const media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
@@ -522,7 +527,7 @@ namespace mfop
 	expected<HRESULT, error> output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
 	{
 		if (not oip.flag) [[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: no input found" } };
-		if (not (oip.flag bitand oip.FLAG_AUDIO) and (filesystem::path{ oip.savefile }.extension() == L".wma" or filesystem::path{ oip.savefile }.extension() == L".m4a"))
+		if (auto extension{ filesystem::path{ oip.savefile }.extension() }; not (oip.flag bitand oip.FLAG_AUDIO) and (extension == ".wma" or extension == ".m4a"))
 			[[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: you've just tried to output audio WITHOUT audio" } };
 
 		auto const com_cleanup{ CoInitializeEx_failfast() };
@@ -545,7 +550,7 @@ namespace mfop
 
 			auto const video_time_stamp{ get_average_time_per_frame(*input_media_types.first) };
 
-			for (auto f{ 0 }; cmp_less(f, oip.n); ++f)
+			for (auto f : views::iota(0, oip.n))
 				if (cmp_less((aeternum = write_video_sample(oip, *sink_writer, f, indices.first, *input_media_types.first, configuration.is_accelerated, video_time_stamp)), 0))
 					goto abort;
 		}
