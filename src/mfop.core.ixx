@@ -13,10 +13,10 @@ module;
 #include "aviutl2_sdk/output2.h"
 #include "aviutl2_sdk/logger2.h"
 
-export module mfop.core;
+export module mfop:core;
 
 import std;
-import mfop.configure;
+import :configure;
 
 namespace mfop
 {

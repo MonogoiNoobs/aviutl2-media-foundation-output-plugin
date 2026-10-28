@@ -10,7 +10,7 @@ module;
 #define NOMINMAX
 #include <Windows.h>
 
-export module mfop.configure;
+export module mfop:configure;
 
 import std;
 

@@ -38,7 +38,9 @@ module;
 	if (not __mfop_expected) [[unlikely]] return unexpected{ __mfop_expected.error() }; \
 } while (0)
 
-module mfop.core;
+module mfop;
+
+import :core;
 
 import std;
 
@@ -49,21 +51,21 @@ static LOG_HANDLE *aviutl_logger;
 
 namespace mfop
 {
-	auto const constinit audio_bits_per_sample{ 16 };
+	auto const constinit audio_bits_per_sample{ 16u };
 
 	auto const constinit null_stream_index{ -1 };
 
-	using nv12_ptr = vector<std::byte>;
+	using nv12_t = vector<std::byte>;
 	using resolution_t = pair<int32_t const, int32_t const>;
 	using fps_t = pair<int32_t const, int32_t const>;
 	using stream_indices_t = pair<DWORD const, DWORD const>;
 	using IMFMediaTypes = pair<com_ptr_nothrow<IMFMediaType>, com_ptr_nothrow<IMFMediaType>>;
 	using sink_writer_with_indices_and_media_types_t = tuple<com_ptr_nothrow<IMFSinkWriter>, stream_indices_t const, IMFMediaTypes const>;
 
-	auto yuy2_to_nv12(ranges::constant_range auto &&yuy2, size_t const yuy2_stride)
+	auto constexpr yuy2_to_nv12(ranges::constant_range auto &&yuy2, unsigned_integral auto const &yuy2_stride)
 	{
 		static auto const constinit take_y{ views::stride(2) };
-		static auto constexpr take_necessary_uv{ [](size_t const &yuy2_stride) {
+		static auto constexpr take_necessary_uv{ [](unsigned_integral auto const &yuy2_stride) {
 			return views::chunk(yuy2_stride)
 				| views::stride(2)
 				| views::join
@@ -73,7 +75,7 @@ namespace mfop
 
 		auto const image_size{ yuy2.size() / 2 };
 
-		nv12_ptr nv12{};
+		nv12_t nv12{};
 		nv12.reserve(image_size * 3 / 2);
 
 		nv12.append_range(yuy2 | take_y);
@@ -82,7 +84,7 @@ namespace mfop
 		return nv12;
 	}
 
-	auto constexpr get_pcm_block_alignment(int32_t const &audio_ch, uint32_t &&bit) noexcept
+	unsigned_integral auto constexpr get_pcm_block_alignment(integral auto const &audio_ch, uint32_t const &bit = audio_bits_per_sample) noexcept
 	{
 		return (audio_ch * bit) / 8;
 	}
@@ -98,7 +100,7 @@ namespace mfop
 		return SUCCEEDED(D3D12CreateDevice(nullptr, minimum_feature_level, __uuidof(D3D12DeviceVersion), nullptr));
 	}
 
-	auto get_average_time_per_frame(IMFMediaType &media_type) noexcept
+	unsigned_integral auto get_average_time_per_frame(IMFMediaType &media_type) noexcept
 	{
 		uint32_t rate{}, scale{};
 		ignore = MFGetAttributeRatio(&media_type, MF_MT_FRAME_RATE, &rate, &scale);
@@ -185,7 +187,7 @@ namespace mfop
 
 		if (is_asf)
 		{
-			auto const block_alignment{ get_pcm_block_alignment(channel_count, audio_bits_per_sample) };
+			auto const block_alignment{ get_pcm_block_alignment(channel_count) };
 			ignore = input_audio_media_type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, block_alignment);
 			ignore = input_audio_media_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, block_alignment * sampling_rate);
 			ignore = input_audio_media_type->SetUINT32(MF_MT_AVG_BITRATE, sampling_rate * audio_bits_per_sample * channel_count);
@@ -550,7 +552,7 @@ namespace mfop
 
 			auto const video_time_stamp{ get_average_time_per_frame(*input_media_types.first) };
 
-			for (auto f : views::iota(0, oip.n))
+			for (auto &&f : views::iota(0, oip.n))
 				if (cmp_less((aeternum = write_video_sample(oip, *sink_writer, f, indices.first, *input_media_types.first, configuration.is_accelerated, video_time_stamp)), 0))
 					goto abort;
 		}
@@ -559,9 +561,9 @@ namespace mfop
 		{
 			aviutl_logger->info(aviutl_logger, L"Audio stream found; sending samples to the writer...");
 
-			auto const audio_max_samples{ static_cast<int32_t>(get_pcm_block_alignment(oip.audio_ch, audio_bits_per_sample) * oip.audio_rate) };
+			auto const audio_max_samples{ static_cast<int32_t>(get_pcm_block_alignment(oip.audio_ch) * oip.audio_rate) };
 
-			for (auto n{ 0 }; cmp_less(n, oip.audio_n); n += oip.audio_rate)
+			for (auto &&n : views::iota(0, oip.audio_n / oip.audio_rate + 1) | views::transform([&](integral auto &&i) { return i * oip.audio_rate; }))
 				if (cmp_less((aeternum = write_audio_sample(oip, *sink_writer, n, indices.second, *input_media_types.second, audio_max_samples)), 0))
 					break;
 		}

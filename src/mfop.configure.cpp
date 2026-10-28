@@ -16,7 +16,9 @@ module;
 #define HANDLE_DIALOG_MSG(hwnd, message, fn) \
 	case (message): return SetDlgMsgResult(dialog, message, HANDLE_##message((hwnd), (wParam), (lParam), (fn)))
 
-module mfop.configure;
+module mfop;
+
+import :configure;
 
 import std;
 
