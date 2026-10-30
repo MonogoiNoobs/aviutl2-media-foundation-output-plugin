@@ -79,7 +79,7 @@ extern "C"
 		aviutl_logger = logger;
 	}
 
-	__declspec(dllexport) OUTPUT_PLUGIN_TABLE const * GetOutputPluginTable() noexcept
+	__declspec(dllexport) auto constexpr GetOutputPluginTable() noexcept
 	{
 		static OUTPUT_PLUGIN_TABLE constexpr output_plugin_table{
 			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO bitor OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
