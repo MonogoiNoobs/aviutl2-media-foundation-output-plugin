@@ -24,7 +24,7 @@ auto string_to_wstring(std::string_view str)
 {
 	auto const required_size{ utf8_to_utf16(str) };
 	std::wstring wstr(required_size, L'\0');
-	utf8_to_utf16(str, wstr.data(), required_size);
+	std::ignore = utf8_to_utf16(str, wstr.data(), required_size);
 	return wstr;
 }
 

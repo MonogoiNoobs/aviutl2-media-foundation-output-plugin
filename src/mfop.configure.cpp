@@ -29,7 +29,14 @@ namespace mfop
 {
 	namespace configure
 	{
-		auto const constinit configuration_ini_path{ LR"(C:\ProgramData\aviutl2\Plugin\MFOutput.ini)" };
+		auto constexpr configuration_ini_path{ LR"(C:\ProgramData\aviutl2\Plugin\MFOutput.ini)" };
+
+#ifndef __cpp_lib_to_string
+		auto constexpr to_wstring(integral auto const &value) noexcept
+		{
+			return format(L"{}", value);
+		}
+#endif
 
 		enum struct audio_bit_rates : int32_t
 		{
@@ -42,15 +49,11 @@ namespace mfop
 		template<typename Key>
 		int32_t consteval get_default() noexcept
 		{
-			if (same_as<Key, video_quality>)
-				return 70;
-			if (same_as<Key, audio_bit_rate>)
-				return to_underlying(audio_bit_rates::kbps_192);
-			if (same_as<Key, is_accelerated>)
-				return BST_UNCHECKED;
+			if (same_as<Key, video_quality>)		return 70;
+			if (same_as<Key, audio_bit_rate>)		return to_underlying(audio_bit_rates::kbps_192);
+			if (same_as<Key, is_accelerated>)		return BST_UNCHECKED;
 
-			if (same_as<Key, is_hevc_preferable>)
-				return FALSE;
+			if (same_as<Key, is_hevc_preferable>)	return FALSE;
 
 			unreachable();
 		}
@@ -75,14 +78,14 @@ namespace mfop
 		bool set(int32_t &&value) noexcept
 		{
 			if (same_as<Key, audio_bit_rate>)
-				return WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).c_str(), configuration_ini_path);
+				return WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).data(), configuration_ini_path);
 			if (same_as<Key, video_quality>)
-				return WritePrivateProfileStringW(L"general", L"videoQuality", to_wstring(value).c_str(), configuration_ini_path);
+				return WritePrivateProfileStringW(L"general", L"videoQuality", to_wstring(value).data(), configuration_ini_path);
 			if (same_as<Key, is_accelerated>)
 				return WritePrivateProfileStringW(L"general", L"useHardware", cmp_equal(value, BST_CHECKED) ? L"1" : L"0", configuration_ini_path);
 
 			if (same_as<Key, is_hevc_preferable>)
-				return WritePrivateProfileStringW(L"mp4", L"videoFormat", to_wstring(value).c_str(), configuration_ini_path);
+				return WritePrivateProfileStringW(L"mp4", L"videoFormat", to_wstring(value).data(), configuration_ini_path);
 
 			unreachable();
 		}
@@ -99,7 +102,7 @@ namespace mfop
 
 			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get<is_hevc_preferable>());
 
-			ignore = SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get<video_quality>()).c_str());
+			ignore = SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get<video_quality>()).data());
 			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get<audio_bit_rate>());
 
 			Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get<is_accelerated>());
@@ -115,7 +118,7 @@ namespace mfop
 				if (cmp_equal(MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO bitor MB_ICONWARNING), IDYES))
 				{
 					ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get_default<is_hevc_preferable>());
-					ignore = SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).c_str());
+					ignore = SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).data());
 					ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get_default<audio_bit_rate>());
 					Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get_default<is_accelerated>());
 				}

@@ -35,7 +35,7 @@ module;
 } while (0)
 
 #define RETURN_IF_UNEXPECTED(__mfop_expected) do { \
-	if (not __mfop_expected) [[unlikely]] return unexpected{ __mfop_expected.error() }; \
+	if (not __mfop_expected) [[unlikely]] return std::unexpected{ __mfop_expected.error() }; \
 } while (0)
 
 module mfop;
@@ -51,9 +51,9 @@ static LOG_HANDLE *aviutl_logger;
 
 namespace mfop
 {
-	auto const constinit audio_bits_per_sample{ 16u };
+	auto constexpr audio_bits_per_sample{ 16u };
 
-	auto const constinit null_stream_index{ -1 };
+	auto constexpr null_stream_index{ -1 };
 
 	using nv12_t = vector<std::byte>;
 	using resolution_t = pair<int32_t const, int32_t const>;
@@ -64,7 +64,7 @@ namespace mfop
 
 	auto constexpr yuy2_to_nv12(ranges::constant_range auto &&yuy2, unsigned_integral auto const &yuy2_stride)
 	{
-		static auto const constinit take_y{ views::stride(2) };
+		static auto constexpr take_y{ views::stride(2) };
 		static auto constexpr take_necessary_uv{ [](unsigned_integral auto const &yuy2_stride) {
 			return views::chunk(yuy2_stride)
 				| views::stride(2)
@@ -75,10 +75,9 @@ namespace mfop
 
 		auto const image_size{ yuy2.size() / 2 };
 
-		nv12_t nv12{};
+		nv12_t nv12{ from_range, yuy2 | take_y };
 		nv12.reserve(image_size * 3 / 2);
 
-		nv12.append_range(yuy2 | take_y);
 		nv12.append_range(yuy2 | take_necessary_uv(yuy2_stride));
 
 		return nv12;
@@ -94,7 +93,7 @@ namespace mfop
 		return is_accelerated ? MFVideoFormat_NV12 : MFVideoFormat_YUY2;
 	}
 
-	template<typename D3D12DeviceVersion = ID3D12Device>
+	template<typename D3D12DeviceVersion = ID3D12Device> requires derived_from<D3D12DeviceVersion, ID3D12Object>
 	auto is_dx12_available(D3D_FEATURE_LEVEL &&minimum_feature_level = D3D_FEATURE_LEVEL_11_1) noexcept
 	{
 		return SUCCEEDED(D3D12CreateDevice(nullptr, minimum_feature_level, __uuidof(D3D12DeviceVersion), nullptr));
@@ -116,6 +115,13 @@ namespace mfop
 		if (extension == ".mp4") [[likely]] return is_hevc_preferable ? MFVideoFormat_HEVC : MFVideoFormat_H264;
 		if (extension == ".wmv") return MFVideoFormat_WVC1;
 		return MFVideoFormat_H264;
+	}
+
+	auto make_media_type() noexcept
+	{
+		com_ptr_nothrow<IMFMediaType> media_type{};
+		ignore = MFCreateMediaType(out_ptr(media_type));
+		return media_type;
 	}
 
 	auto add_windows_media_qvba_activation_media_attributes(IMFAttributes &attributes, uint32_t const &quality) noexcept
@@ -159,8 +165,7 @@ namespace mfop
 
 		auto const video_format{ get_suitable_input_video_format_guid(is_accelerated) };
 
-		com_ptr_nothrow<IMFMediaType> input_video_media_type{};
-		ignore = MFCreateMediaType(out_ptr(input_video_media_type));
+		auto const input_video_media_type{ make_media_type() };
 		ignore = input_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
 		ignore = input_video_media_type->SetGUID(MF_MT_SUBTYPE, video_format);
 		ignore = input_video_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
@@ -176,8 +181,7 @@ namespace mfop
 
 	auto make_input_audio_media_type(int32_t const &channel_count, int32_t const &sampling_rate, bool const &is_asf) noexcept
 	{
-		com_ptr_nothrow<IMFMediaType> input_audio_media_type{};
-		ignore = MFCreateMediaType(out_ptr(input_audio_media_type));
+		auto const input_audio_media_type{ make_media_type() };
 		ignore = input_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
 		ignore = input_audio_media_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
 		ignore = input_audio_media_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, audio_bits_per_sample);
@@ -200,8 +204,8 @@ namespace mfop
 	{
 		return IMFMediaTypes
 		{
-			(oip.flag bitand oip.FLAG_VIDEO) and (output_video_format not_eq GUID_NULL) ? make_input_video_media_type({ oip.w, oip.h },{ oip.rate, oip.scale }, is_accelerated) : nullptr,
-			oip.flag bitand oip.FLAG_AUDIO ? make_input_audio_media_type(oip.audio_ch, oip.audio_rate, cmp_equal(output_video_format.Data1, FCC('WVC1'))) : nullptr
+			cmp_equal(oip.flag bitand oip.FLAG_VIDEO, 0) or output_video_format == GUID_NULL ? nullptr : make_input_video_media_type({ oip.w, oip.h },{ oip.rate, oip.scale }, is_accelerated),
+			cmp_equal(oip.flag bitand oip.FLAG_AUDIO, 0) ? nullptr : make_input_audio_media_type(oip.audio_ch, oip.audio_rate, cmp_equal(output_video_format.Data1, FCC('WVC1')))
 		};
 	}
 
@@ -227,7 +231,7 @@ namespace mfop
 		}
 		else
 		{
-			static auto const constinit d3d_feature_levels{ to_array(
+			static auto constexpr d3d_feature_levels{ to_array(
 			{
 				D3D_FEATURE_LEVEL_11_1,
 				D3D_FEATURE_LEVEL_11_0,
@@ -297,9 +301,7 @@ namespace mfop
 		uint32_t rate, scale;
 		ignore = MFGetAttributeRatio(&input_media_type, MF_MT_FRAME_RATE, &rate, &scale);
 
-		auto output_video_media_type{ com_ptr_nothrow<IMFMediaType>{} };
-		ignore = MFCreateMediaType(out_ptr(output_video_media_type));
-
+		auto const output_video_media_type{ make_media_type() };
 		ignore = output_video_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
 		ignore = output_video_media_type->SetGUID(MF_MT_SUBTYPE, output_video_format);
 		ignore = MFSetAttributeSize(output_video_media_type.get(), MF_MT_FRAME_SIZE, width, height);
@@ -331,9 +333,7 @@ namespace mfop
 	{
 		__assume(cmp_less_equal(output_bit_rate, 3));
 
-		auto output_audio_media_type{ com_ptr_nothrow<IMFMediaType>{} };
-		ignore = MFCreateMediaType(out_ptr(output_audio_media_type));
-
+		auto const output_audio_media_type{ make_media_type() };
 		ignore = output_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
 		ignore = output_audio_media_type->SetGUID(MF_MT_SUBTYPE, cmp_equal(output_video_format.Data1, FCC('WVC1')) ? MFAudioFormat_WMAudioV9 : MFAudioFormat_AAC);
 		ignore = output_audio_media_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, MFGetAttributeUINT32(&input_media_type, MF_MT_AUDIO_NUM_CHANNELS, 2));
@@ -347,7 +347,7 @@ namespace mfop
 		return audio_index;
 	}
 
-	expected<HRESULT, error> configure_video_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_video_media_type) noexcept
+	expected<DWORD, error> configure_video_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_video_media_type) noexcept
 	{
 		__assume(cmp_less_equal(quality, 100));
 
@@ -374,10 +374,10 @@ namespace mfop
 
 		UNEXPECT_IF_FAILED(sink_writer.SetInputMediaType(index, &input_video_media_type, encoder_attributes.get()));
 
-		return S_OK;
+		return index;
 	}
 
-	expected<HRESULT, error> configure_audio_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_audio_media_type) noexcept
+	expected<DWORD, error> configure_audio_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_audio_media_type) noexcept
 	{
 		com_ptr_nothrow<IMFAttributes> encoder_attributes{};
 
@@ -389,29 +389,19 @@ namespace mfop
 
 		UNEXPECT_IF_FAILED(sink_writer.SetInputMediaType(index, &input_audio_media_type, encoder_attributes.get()));
 
-		return S_OK;
+		return index;
 	}
 
 	expected<DWORD, error> configure_video_stream(IMFSinkWriter &sink_writer, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
-		auto const index{ configure_video_output(sink_writer, input_media_type, output_video_format) };
-		RETURN_IF_UNEXPECTED(index);
-
-		auto const result{ configure_video_input(sink_writer, *index, quality, output_video_format, input_media_type) };
-		RETURN_IF_UNEXPECTED(result);
-
-		return *index;
+		return configure_video_output(sink_writer, input_media_type, output_video_format)
+			.and_then([&](DWORD &&i){ return configure_video_input(sink_writer, i, quality, output_video_format, input_media_type); });
 	}
 
 	expected<DWORD, error> configure_audio_stream(IMFSinkWriter &sink_writer, int32_t const &output_bit_rate, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
-		auto const index{ configure_audio_output(sink_writer, input_media_type, output_bit_rate, output_video_format) };
-		RETURN_IF_UNEXPECTED(index);
-
-		auto const result{ configure_audio_input(sink_writer, *index, quality, output_video_format, input_media_type) };
-		RETURN_IF_UNEXPECTED(result);
-
-		return *index;
+		return configure_audio_output(sink_writer, input_media_type, output_bit_rate, output_video_format)
+			.and_then([&](DWORD &&i){ return configure_audio_input(sink_writer, i, quality, output_video_format, input_media_type); });
 	}
 
 	expected<stream_indices_t, error> configure_streams(IMFSinkWriter &sink_writer, uint32_t const &quality, uint32_t const &output_bit_rate, IMFMediaTypes const &input_media_types, GUID const &output_video_format) noexcept
@@ -424,7 +414,7 @@ namespace mfop
 			RETURN_IF_UNEXPECTED(video_index);
 		}
 
-		if (input_media_types.second) [[likely]]
+		if (input_media_types.second)
 		{
 			audio_index = configure_audio_stream(sink_writer, output_bit_rate, quality, *input_media_types.second, output_video_format);
 			RETURN_IF_UNEXPECTED(audio_index);
@@ -439,7 +429,7 @@ namespace mfop
 
 		auto const extension{ filesystem::path{ oip.savefile }.extension() };
 
-		if ((oip.flag bitand oip.FLAG_VIDEO) and not (extension == ".wma" or extension == ".m4a"))
+		if (not (cmp_equal(oip.flag bitand oip.FLAG_VIDEO, 0) or (extension == ".wma" or extension == ".m4a")))
 			output_video_format = get_suitable_output_video_format_guid(extension, configuration.is_hevc_preferable);
 
 		auto const media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
@@ -501,7 +491,7 @@ namespace mfop
 
 		int32_t actual_samples{};
 		auto const audio_data{ static_cast<uint8_t *>(oip.func_get_audio(n, max_samples, &actual_samples, MFAudioFormat_PCM.Data1)) };
-		if (not actual_samples) return S_FALSE;
+		if (cmp_equal(actual_samples, 0)) return S_FALSE;
 
 		auto const sample_duration{ static_cast<int64_t>(actual_samples) * 10'000'000LL / max_samples };
 		auto const sample_time{ static_cast<int64_t>(n) * 10'000'000LL / oip.audio_rate };
@@ -528,8 +518,8 @@ namespace mfop
 
 	expected<HRESULT, error> output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
 	{
-		if (not oip.flag) [[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: no input found" } };
-		if (auto extension{ filesystem::path{ oip.savefile }.extension() }; not (oip.flag bitand oip.FLAG_AUDIO) and (extension == ".wma" or extension == ".m4a"))
+		if (cmp_equal(oip.flag, 0)) [[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: no input found" } };
+		if (auto extension{ filesystem::path{ oip.savefile }.extension() }; cmp_equal(oip.flag bitand oip.FLAG_AUDIO, 0) and (extension == ".wma" or extension == ".m4a"))
 			[[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: you've just tried to output audio WITHOUT audio" } };
 
 		auto const com_cleanup{ CoInitializeEx_failfast() };
@@ -546,7 +536,7 @@ namespace mfop
 
 		auto aeternum{ S_OK };
 
-		if (cmp_not_equal(indices.first, null_stream_index)) [[likely]]
+		if (input_media_types.first) [[likely]]
 		{
 			aviutl_logger->info(aviutl_logger, L"Video stream found; sending samples to the writer...");
 
@@ -557,7 +547,7 @@ namespace mfop
 					goto abort;
 		}
 
-		if (cmp_not_equal(indices.second, null_stream_index)) [[likely]]
+		if (input_media_types.second)
 		{
 			aviutl_logger->info(aviutl_logger, L"Audio stream found; sending samples to the writer...");
 
