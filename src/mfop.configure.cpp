@@ -31,13 +31,6 @@ namespace mfop
 	{
 		auto constexpr configuration_ini_path{ LR"(C:\ProgramData\aviutl2\Plugin\MFOutput.ini)" };
 
-#ifndef __cpp_lib_to_string
-		auto constexpr to_wstring(integral auto const &value) noexcept
-		{
-			return format(L"{}", value);
-		}
-#endif
-
 		enum struct audio_bit_rates : int32_t
 		{
 			kbps_96,
@@ -59,7 +52,7 @@ namespace mfop
 		}
 
 		template<typename Key>
-		underlying_type<Key>::type get() noexcept
+		underlying_type<Key>::type constexpr get() noexcept
 		{
 			if (same_as<Key, video_quality>)
 				return GetPrivateProfileIntW(L"general", L"videoQuality", get_default<Key>(), configuration_ini_path);
@@ -75,7 +68,7 @@ namespace mfop
 		}
 
 		template<typename Key>
-		bool set(int32_t &&value) noexcept
+		bool constexpr set(int32_t &&value) noexcept
 		{
 			if (same_as<Key, audio_bit_rate>)
 				return WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).data(), configuration_ini_path);
@@ -90,7 +83,7 @@ namespace mfop
 			unreachable();
 		}
 
-		auto on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
+		auto constexpr on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
 		{
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"H.264");
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"HEVC");
@@ -102,7 +95,7 @@ namespace mfop
 
 			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get<is_hevc_preferable>());
 
-			ignore = SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get<video_quality>()).data());
+			ignore = SetDlgItemInt(dialog, IDC_EDIT1, get<video_quality>(), false);
 			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get<audio_bit_rate>());
 
 			Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get<is_accelerated>());
@@ -110,7 +103,7 @@ namespace mfop
 			return false;
 		}
 
-		auto on_command(HWND dialog, int32_t id, HWND, uint32_t) noexcept
+		auto constexpr on_command(HWND dialog, int32_t id, HWND, uint32_t) noexcept
 		{
 			switch (id)
 			{
@@ -118,7 +111,7 @@ namespace mfop
 				if (cmp_equal(MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO bitor MB_ICONWARNING), IDYES))
 				{
 					ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get_default<is_hevc_preferable>());
-					ignore = SetDlgItemTextW(dialog, IDC_EDIT1, to_wstring(get_default<video_quality>()).data());
+					ignore = SetDlgItemInt(dialog, IDC_EDIT1, get_default<video_quality>(), false);
 					ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get_default<audio_bit_rate>());
 					Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get_default<is_accelerated>());
 				}
@@ -136,7 +129,7 @@ namespace mfop
 			}
 		}
 
-		intptr_t CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t wParam, [[maybe_unused]] intptr_t lParam) noexcept
+		intptr_t constexpr CALLBACK config_dialog_proc(HWND dialog, uint32_t message, uintptr_t wParam, [[maybe_unused]] intptr_t lParam) noexcept
 		{
 			switch (message)
 			{
@@ -148,7 +141,7 @@ namespace mfop
 			}
 		}
 
-		void open_dialog(HWND &window, HINSTANCE &instance) noexcept
+		void constexpr open_dialog(HWND &window, HINSTANCE &instance) noexcept
 		{
 			DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
 		}

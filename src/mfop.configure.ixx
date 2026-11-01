@@ -20,15 +20,15 @@ namespace mfop
 	{
 		export
 		{
-			void open_dialog(HWND &window, HINSTANCE &instance) noexcept;
+			void constexpr open_dialog(HWND &window, HINSTANCE &instance) noexcept;
 
 			enum struct video_quality : std::uint32_t {};
 			enum struct audio_bit_rate : std::uint32_t {};
 			enum struct is_hevc_preferable : bool {};
 			enum struct is_accelerated : bool {};
 
-			template<typename Key> std::underlying_type<Key>::type get() noexcept;
-			template<typename Key> bool set(std::int32_t &&value) noexcept;
+			template<typename Key> std::underlying_type<Key>::type constexpr get() noexcept;
+			template<typename Key> bool constexpr set(std::int32_t &&value) noexcept;
 		}
 	}
 }

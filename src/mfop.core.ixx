@@ -36,7 +36,7 @@ namespace mfop
 			std::string where;
 		};
 
-		std::expected<HRESULT, error> output_file
+		std::expected<HRESULT, error> constexpr output_file
 		(
 			OUTPUT_INFO const &oip,
 			output_configuration &&configuration,

@@ -7,6 +7,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#include <wil/result.h>
 #include "aviutl2_sdk/output2.h"
 #include "aviutl2_sdk/logger2.h"
 
@@ -15,12 +16,12 @@ import mfop;
 
 static LOG_HANDLE *aviutl_logger;
 
-auto utf8_to_utf16(std::string_view source, wchar_t *dest = nullptr, std::int32_t const dest_size = 0)
+auto constexpr utf8_to_utf16(std::string_view source, wchar_t *dest = nullptr, std::int32_t const dest_size = 0)
 {
 	return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source.data(), static_cast<std::int32_t>(source.size()), dest, dest_size);
 }
 
-auto string_to_wstring(std::string_view str)
+auto constexpr string_to_wstring(std::string_view str)
 {
 	auto const required_size{ utf8_to_utf16(str) };
 	std::wstring wstr(required_size, L'\0');
@@ -28,7 +29,7 @@ auto string_to_wstring(std::string_view str)
 	return wstr;
 }
 
-auto func_output(OUTPUT_INFO *oip) noexcept
+auto constexpr func_output(OUTPUT_INFO *oip) noexcept
 {
 	using namespace mfop::configure;
 
@@ -66,15 +67,21 @@ auto func_output(OUTPUT_INFO *oip) noexcept
 	return true;
 }
 
-auto func_config(HWND window, HINSTANCE instance)
+auto constexpr func_config(HWND window, HINSTANCE instance)
 {
 	mfop::configure::open_dialog(window, instance);
 	return true;
 }
 
+auto WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
+{
+	wil::DLLMain(instance, reason, reserved);
+	return true;
+}
+
 extern "C"
 {
-	__declspec(dllexport) auto InitializeLogger(LOG_HANDLE *logger) noexcept
+	__declspec(dllexport) auto constexpr InitializeLogger(LOG_HANDLE *logger) noexcept
 	{
 		aviutl_logger = logger;
 	}
