@@ -451,13 +451,13 @@ namespace mfop
 
 		oip.func_rest_time_disp(f, oip.n);
 
-		auto const frame_image{ as_bytes(span{ static_cast<uint8_t *>(oip.func_get_video(f, FCC('YUY2'))), static_cast<size_t>(oip.w * oip.h * 2) }) };
-
 		com_ptr_nothrow<IMFMediaBuffer> video_buffer{};
 		RETURN_IF_FAILED(MFCreateMediaBufferFromMediaType(&input_media_type, time_stamp, 0, 0, out_ptr(video_buffer)));
 
 		com_ptr_nothrow<IMF2DBuffer2> video_2d_buffer{};
 		RETURN_IF_FAILED(video_buffer.query_to(&video_2d_buffer));
+
+		auto const frame_image{ as_bytes(span{ static_cast<uint8_t *>(oip.func_get_video(f, FCC('YUY2'))), static_cast<size_t>(oip.w * oip.h * 2) }) };
 
 		// Neither buffer_begin nor buffer_size used, but do NOT give Lock2DSize's 4-5th args nullptr or you'll be cooked.
 		uint8_t *scanline{}, *buffer_begin{};

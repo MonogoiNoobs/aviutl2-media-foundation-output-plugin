@@ -32,10 +32,6 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <ImportGroup Label="ExtensionSettings">
-  </ImportGroup>
-  <ImportGroup Label="Shared">
-  </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
@@ -56,20 +52,14 @@
       <PreprocessorDefinitions>_DEBUG;MFOUTPUT_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PrecompiledHeaderFile>
-      </PrecompiledHeaderFile>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdclatest</LanguageStandard_C>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <ForcedIncludeFiles>
-      </ForcedIncludeFiles>
       <TranslateIncludes>false</TranslateIncludes>
       <AdditionalOptions>/utf-8 /Zc:__cplusplus /Zc:__STDC__ /Zc:enumTypes /Zc:externConstexpr /Zc:templateScope /Zc:throwingNew %(AdditionalOptions)</AdditionalOptions>
       <EnableModules>true</EnableModules>
       <BuildStlModules>false</BuildStlModules>
       <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
-      <DisableSpecificWarnings>
-      </DisableSpecificWarnings>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
@@ -80,8 +70,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <DelayLoadDLLs>User32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
-      <AdditionalOptions>
-      </AdditionalOptions>
       <LargeAddressAware>true</LargeAddressAware>
       <LinkTimeCodeGeneration>UseFastLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
@@ -91,6 +79,7 @@
     </ResourceCompile>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
+      <AdditionalManifestFiles>additional.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -102,20 +91,14 @@
       <PreprocessorDefinitions>NDEBUG;MFOUTPUT_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PrecompiledHeaderFile>
-      </PrecompiledHeaderFile>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdclatest</LanguageStandard_C>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <ForcedIncludeFiles>
-      </ForcedIncludeFiles>
       <TranslateIncludes>false</TranslateIncludes>
       <AdditionalOptions>/utf-8 /Zc:__cplusplus /Zc:__STDC__ /Zc:enumTypes /Zc:externConstexpr /Zc:templateScope /Zc:throwingNew %(AdditionalOptions)</AdditionalOptions>
       <EnableModules>true</EnableModules>
       <BuildStlModules>false</BuildStlModules>
       <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
-      <DisableSpecificWarnings>
-      </DisableSpecificWarnings>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
       <DebugInformationFormat>None</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -127,8 +110,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <DelayLoadDLLs>User32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
-      <AdditionalOptions>
-      </AdditionalOptions>
       <LargeAddressAware>true</LargeAddressAware>
       <LinkTimeCodeGeneration>UseFastLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
@@ -138,6 +119,7 @@
     </ResourceCompile>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
+      <AdditionalManifestFiles>additional.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
