@@ -37,6 +37,11 @@ typedef void* OBJECT_HANDLE;
 // エフェクトハンドル
 typedef void* EFFECT_HANDLE;
 
+//----------------------------------------------------------------------------------
+
+// 各項目の設定名はフィルタ毎にユニークにする必要があります。(設定値が保存される項目のみ)
+// 設定名を'yyy::xxx'のように指定すると最後の'::'以降の'xxx'の部分のみ設定画面で表示される形に出来ます。
+
 // トラックバー項目構造体
 // 例：FILTER_ITEM_TRACK track = { L"数値", 100.0, 0.0, 1000.0, 0.01 };
 struct FILTER_ITEM_TRACK {
@@ -223,13 +228,15 @@ struct FILTER_ITEM_HIDE_RULE {
 	FILTER_ITEM_HIDE_RULE(LPCWSTR name, LPCWSTR condition_name, OPERATOR condition_operator = OPERATOR::EQUAL, int condition_value = 0)
 		: name(name), condition_name(condition_name), condition_operator(condition_operator), condition_value(condition_value) {}
 	LPCWSTR type = L"hiderule";			// 設定の種別
-	LPCWSTR name;						// 非表示にする設定名 ※設定値を持つ項目のみ
+	LPCWSTR name;						// 非表示にする設定名 ※設定値を持つ項目,設定グループ項目,セパレーター項目
 	LPCWSTR condition_name;				// 非表示の条件の設定名
 										// チェックボックス項目,リスト選択項目,ファイル選択項目,フォルダ選択項目
 										// ※セクション毎のチェックボックスはセクション毎が有効の場合は2を返却(0/1/2)
 										// ※ファイル,フォルダ選択項目は選択されているかを返却(0/1)
 										// ※nullptrを指定した場合は常に非表示
 										// ※"filter"を指定した場合はフィルタオブジェクトかを返却(0/1)
+										// ※"input"を指定した場合はオブジェクト入力項目種別(0=対象外/1=画像用/2=音声用/3=画像・音声対応)
+										// ※"output"を指定した場合はオブジェクト出力項目種別(0=対象外/1=画像用/2=音声用/3=画像・音声対応)
 	const OPERATOR condition_operator;	// 非表示の条件の比較種別
 	const int condition_value;			// 非表示の条件の比較値
 };
@@ -322,6 +329,13 @@ enum class BLEND_STATE_MODE : int {
 	ADD		= 3,	// 出力を加算合成
 };
 
+// カメラ制御状態の種別
+enum class CAMERA_MODE : int {
+	OFF			= 0,	// カメラ制御対象外
+	ON			= 1,	// カメラ制御対象
+	EDIT_VIEW	= 2,	// カメラ制御対象(編集用視点)
+};
+
 //----------------------------------------------------------------------------------
 
 // 画像入力のピクセルフォーマット種別
@@ -380,6 +394,8 @@ struct OBJECT_INFO {
 							// ※処理対象のフィルタ効果、オブジェクト入出力の固有ID
 	int flag;				// フラグ
 	static constexpr int FLAG_FILTER_OBJECT = 1;	// フィルタオブジェクトか？
+	static constexpr int FLAG_GROUP_TARGET = 2;		// グループ制御の対象か？
+	static constexpr int FLAG_CAMERA_TARGET = 4;	// カメラ制御の対象か？ (画像フィルタのみ)
 	int layer;				// オブジェクトの現在のレイヤー番号 ※描画対象のオブジェクトのレイヤー番号
 	int	index;				// 複数オブジェクト時の現在の対象番号 ※個別オブジェクト用
 	int	num;				// 複数オブジェクト時の対象数 (1 = 単体オブジェクト / 0 = 不定) ※個別オブジェクト用
@@ -391,6 +407,8 @@ struct OBJECT_INFO {
 	EFFECT_HANDLE effect_handle;	// 自身のエフェクトのハンドル
 
 	inline bool is_filter_object() const { return flag & FLAG_FILTER_OBJECT; }
+	inline bool is_group_target() const { return flag & FLAG_GROUP_TARGET; }
+	inline bool is_camera_target() const { return flag & FLAG_CAMERA_TARGET; }
 };
 
 // オブジェクトの画像パラメータ構造体
@@ -839,6 +857,14 @@ struct FILTER_PROC_VIDEO {
 	// 戻り値	: グループ制御対象外の場合はfalse
 	bool (*get_group_matrix)(DirectX::XMMATRIX* matrix);
 
+	// 現在のオブジェクトのカメラ制御の状態を取得します
+	// 戻り値	: カメラ制御状態
+	CAMERA_MODE (*get_camera_mode)();
+
+	// 現在のオブジェクトに影響しているカメラ制御オブジェクトを取得します
+	// 戻り値	: 取得したカメラ制御オブジェクトのハンドル (カメラ制御対象外の場合はnullptrを返却)
+	OBJECT_HANDLE (*get_camera_control_object)();
+
 };
 
 //----------------------------------------------------------------------------------
@@ -894,6 +920,16 @@ struct FILTER_PROC_AUDIO {
 	// ユーザーデータのポインタ (FLAG_USERDATAが有効の時に設定されます)
 	// func_create()で返却したユーザーデータのポインタ
 	void* userdata;
+
+	// 現在のオーディオバッファのデータを取得する
+	// buffer		: 音声データの格納先へのポインタ ※音声データはPCM(float)32bit
+	// channel		: 音声データのチャンネル ( 0 = 左チャンネル / 1 = 右チャンネル )
+	void (*get_audiobuffer_data)(float* buffer, int channel);
+
+	// 現在のオーディオバッファのデータを設定する
+	// buffer		: 音声データへのポインタ ※音声データはPCM(float)32bit
+	// channel		: 音声データのチャンネル ( 0 = 左チャンネル / 1 = 右チャンネル )
+	void (*set_audiobuffer_data)(const float* buffer, int channel);
 
 };
 

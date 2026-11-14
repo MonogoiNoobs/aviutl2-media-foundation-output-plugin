@@ -423,7 +423,7 @@ namespace mfop
 		return stream_indices_t{ move_if_noexcept(*video_index), move_if_noexcept(*audio_index) };
 	}
 
-	expected<sink_writer_with_indices_and_media_types_t, error> constexpr make_initialized_sink_writer(OUTPUT_INFO const &oip, output_configuration const &configuration) noexcept
+	expected<sink_writer_with_indices_and_media_types_t, error> constexpr make_initialized_sink_writer(OUTPUT_INFO const &oip, configure::output_configuration const &configuration) noexcept
 	{
 		auto output_video_format{ GUID_NULL };
 
@@ -442,7 +442,7 @@ namespace mfop
 
 		UNEXPECT_IF_FAILED((*sink_writer)->BeginWriting());
 
-		return sink_writer_with_indices_and_media_types_t{ move_if_noexcept(*sink_writer), move_if_noexcept(*indices), move_if_noexcept(media_types) };
+		return sink_writer_with_indices_and_media_types_t{ move(*sink_writer), move(*indices), move(media_types) };
 	}
 
 	auto constexpr write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type, bool const &is_accelerated, int64_t const &time_stamp) noexcept
@@ -516,7 +516,7 @@ namespace mfop
 		return unique_call<decltype(&::MFShutdown), ::MFShutdown>{};
 	}
 
-	expected<HRESULT, error> constexpr output_file(OUTPUT_INFO const &oip, output_configuration &&configuration, LOG_HANDLE &logger)
+	expected<HRESULT, error> constexpr output_file(OUTPUT_INFO const &oip, configure::output_configuration const &configuration, LOG_HANDLE &logger)
 	{
 		static auto constexpr is_hresult_successful{[](HRESULT const &hr) noexcept
 		{

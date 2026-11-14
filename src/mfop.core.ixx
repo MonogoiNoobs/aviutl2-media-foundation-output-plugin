@@ -22,14 +22,6 @@ namespace mfop
 {
 	export 
 	{
-		struct output_configuration
-		{
-			std::underlying_type<configure::video_quality>::type video_quality;
-			std::underlying_type<configure::audio_bit_rate>::type audio_bit_rate;
-			std::underlying_type<configure::is_hevc_preferable>::type is_hevc_preferable;
-			std::underlying_type<configure::is_accelerated>::type is_accelerated;
-		};
-
 		struct error
 		{
 			HRESULT code;
@@ -39,7 +31,7 @@ namespace mfop
 		std::expected<HRESULT, error> constexpr output_file
 		(
 			OUTPUT_INFO const &oip,
-			output_configuration &&configuration,
+			configure::output_configuration const &configuration,
 			LOG_HANDLE &logger
 		); 
 	}

@@ -13,6 +13,8 @@ module;
 #include <wil/com.h>
 #include "resource.h"
 
+#include "aviutl2_sdk/plugin2.h"
+
 #define HANDLE_DIALOG_MSG(hwnd, message, fn) \
 	case (message): return SetDlgMsgResult(dialog, message, HANDLE_##message((hwnd), (wParam), (lParam), (fn)))
 
@@ -29,7 +31,33 @@ namespace mfop
 {
 	namespace configure
 	{
-		auto constexpr configuration_ini_path{ LR"(C:\ProgramData\aviutl2\Plugin\MFOutput.ini)" };
+		namespace keys
+		{
+			auto constexpr video_quality{ "MFOutput: Video quality" };
+			auto constexpr audio_bit_rate{ "MFOutput: Audio bit rate" };
+			auto constexpr is_accelerated{ "MFOutput: Is hardware acceleration used?" };
+			auto constexpr is_hevc_preferable{ "MFOutput: Is HEVC preferable?" };
+		}
+
+		template<typename Key>
+		int32_t consteval get_default() noexcept
+		{
+			if (same_as<Key, video_quality>)		return 70;
+			if (same_as<Key, audio_bit_rate>)		return 3;
+			if (same_as<Key, is_accelerated>)		return BST_UNCHECKED;
+
+			if (same_as<Key, is_hevc_preferable>)	return FALSE;
+
+			unreachable();
+		}
+
+		output_configuration temp
+		{
+			.video_quality = 70,
+			.audio_bit_rate = 3,
+			.is_hevc_preferable = false,
+			.is_accelerated = false
+		};
 
 		enum struct audio_bit_rates : int32_t
 		{
@@ -39,48 +67,22 @@ namespace mfop
 			kbps_192
 		};
 
-		template<typename Key>
-		int32_t consteval get_default() noexcept
+		output_configuration constexpr *load(PROJECT_FILE const &project_file) noexcept
 		{
-			if (same_as<Key, video_quality>)		return 70;
-			if (same_as<Key, audio_bit_rate>)		return to_underlying(audio_bit_rates::kbps_192);
-			if (same_as<Key, is_accelerated>)		return BST_UNCHECKED;
-
-			if (same_as<Key, is_hevc_preferable>)	return FALSE;
-
-			unreachable();
+			if (auto t { project_file.get_param_string(keys::video_quality) }) temp.video_quality = stoi(t);
+			if (auto t{ project_file.get_param_string(keys::audio_bit_rate) }) temp.audio_bit_rate = stoi(t);
+			if (auto t{ project_file.get_param_string(keys::is_accelerated) }) temp.is_accelerated = t;
+			if (auto t{ project_file.get_param_string(keys::is_hevc_preferable) }) temp.is_hevc_preferable = t;
+			return &temp;
 		}
 
-		template<typename Key>
-		underlying_type<Key>::type constexpr get() noexcept
+		bool constexpr store(PROJECT_FILE const &project_file) noexcept
 		{
-			if (same_as<Key, video_quality>)
-				return GetPrivateProfileIntW(L"general", L"videoQuality", get_default<Key>(), configuration_ini_path);
-			if (same_as<Key, audio_bit_rate>)
-				return GetPrivateProfileIntW(L"general", L"audioBitRate", get_default<Key>(), configuration_ini_path);
-			if (same_as<Key, is_accelerated>)
-				return cmp_equal(GetPrivateProfileIntW(L"general", L"useHardware", get_default<Key>(), configuration_ini_path), BST_CHECKED);
-
-			if (same_as<Key, is_hevc_preferable>)
-				return cmp_equal(GetPrivateProfileIntW(L"mp4", L"videoFormat", get_default<Key>(), configuration_ini_path), TRUE);
-
-			unreachable();
-		}
-
-		template<typename Key>
-		bool constexpr set(int32_t &&value) noexcept
-		{
-			if (same_as<Key, audio_bit_rate>)
-				return WritePrivateProfileStringW(L"general", L"audioBitRate", to_wstring(value).data(), configuration_ini_path);
-			if (same_as<Key, video_quality>)
-				return WritePrivateProfileStringW(L"general", L"videoQuality", to_wstring(value).data(), configuration_ini_path);
-			if (same_as<Key, is_accelerated>)
-				return WritePrivateProfileStringW(L"general", L"useHardware", cmp_equal(value, BST_CHECKED) ? L"1" : L"0", configuration_ini_path);
-
-			if (same_as<Key, is_hevc_preferable>)
-				return WritePrivateProfileStringW(L"mp4", L"videoFormat", to_wstring(value).data(), configuration_ini_path);
-
-			unreachable();
+			project_file.set_param_string(keys::video_quality, to_string(temp.video_quality).data());
+			project_file.set_param_string(keys::audio_bit_rate, to_string(temp.audio_bit_rate).data());
+			project_file.set_param_string(keys::is_accelerated, temp.is_accelerated ? "1" : "0");
+			project_file.set_param_string(keys::is_hevc_preferable, to_string(temp.is_hevc_preferable).data());
+			return true;
 		}
 
 		auto constexpr on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
@@ -93,12 +95,12 @@ namespace mfop
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"160");
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"192");
 
-			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get<is_hevc_preferable>());
+			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), temp.is_hevc_preferable);
 
-			ignore = SetDlgItemInt(dialog, IDC_EDIT1, get<video_quality>(), false);
-			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), get<audio_bit_rate>());
+			ignore = SetDlgItemInt(dialog, IDC_EDIT1, temp.video_quality, false);
+			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO1), temp.audio_bit_rate);
 
-			Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), get<is_accelerated>());
+			Button_SetCheck(GetDlgItem(dialog, IDC_CHECK1), temp.is_accelerated);
 
 			return false;
 		}
@@ -117,11 +119,11 @@ namespace mfop
 				}
 				break;
 			case IDOK:
-				ignore = set<is_hevc_preferable>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO2)));
-				ignore = set<video_quality>(clamp(GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false), 1u, 100u));
+				temp.is_hevc_preferable = ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO2));
+				temp.video_quality = clamp(GetDlgItemInt(dialog, IDC_EDIT1, nullptr, false), 1u, 100u);
 
-				ignore = set<audio_bit_rate>(ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO1)));
-				ignore = set<is_accelerated>(Button_GetCheck(GetDlgItem(dialog, IDC_CHECK1)));
+				temp.audio_bit_rate = ComboBox_GetCurSel(GetDlgItem(dialog, IDC_COMBO1));
+				temp.is_accelerated = Button_GetCheck(GetDlgItem(dialog, IDC_CHECK1));
 				[[fallthrough]];
 			case IDCANCEL:
 				ignore = EndDialog(dialog, id);

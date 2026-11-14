@@ -15,6 +15,7 @@ import std;
 import mfop;
 
 static LOG_HANDLE *aviutl_logger;
+static mfop::configure::output_configuration *config;
 
 auto constexpr utf8_to_utf16(std::string_view source, wchar_t *dest = nullptr, std::int32_t const dest_size = 0)
 {
@@ -33,20 +34,7 @@ auto constexpr func_output(OUTPUT_INFO *oip) noexcept
 {
 	using namespace mfop::configure;
 
-	auto const succeeded{ mfop::output_file
-	(
-		*oip,
-		mfop::output_configuration
-		{
-			get<video_quality>(),
-			get<audio_bit_rate>(),
-			get<is_hevc_preferable>(),
-			get<is_accelerated>()
-		},
-		*aviutl_logger
-	) };
-
-	if (not succeeded)
+	if (auto const succeeded{ mfop::output_file(*oip, *config, *aviutl_logger) }; not succeeded)
 	{
 		aviutl_logger->error
 		(
@@ -73,6 +61,17 @@ auto constexpr func_config(HWND window, HINSTANCE instance)
 	return true;
 }
 
+auto constexpr func_load_project_config(PROJECT_FILE *project_file)
+{
+	config = mfop::configure::load(*project_file);
+	return true;
+}
+
+auto constexpr func_save_project_config(PROJECT_FILE *project_file)
+{
+	return mfop::configure::store(*project_file);
+}
+
 auto WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
 {
 	wil::DLLMain(instance, reason, reserved);
@@ -89,7 +88,7 @@ extern "C"
 	__declspec(dllexport) auto constexpr GetOutputPluginTable() noexcept
 	{
 		static OUTPUT_PLUGIN_TABLE constexpr output_plugin_table{
-			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO bitor OUTPUT_PLUGIN_TABLE::FLAG_AUDIO, //	フラグ
+			OUTPUT_PLUGIN_TABLE::FLAG_VIDEO bitor OUTPUT_PLUGIN_TABLE::FLAG_AUDIO bitor OUTPUT_PLUGIN_TABLE::FLAG_PROJECT_CONFIG, //	フラグ
 			L"Media Foundation 出力",					// プラグインの名前
 			L"MP4 (*.mp4; *.m4a)\0"							"*.mp4;*.m4a\0"
 			"Advanced Systems Format (*.wmv; *.wma)\0"		"*.wmv;*.wma\0"
@@ -98,8 +97,8 @@ extern "C"
 			func_output,									// 出力時に呼ばれる関数へのポインタ
 			func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 			nullptr,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
-			nullptr,
-			nullptr,
+			func_load_project_config,
+			func_save_project_config,
 		};
 		return &output_plugin_table;
 	}
