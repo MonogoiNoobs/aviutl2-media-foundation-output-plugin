@@ -36,7 +36,7 @@ namespace mfop
 				std::underlying_type<is_accelerated>::type is_accelerated;
 			};
 
-			output_configuration constexpr *load(PROJECT_FILE const &project_file) noexcept;
+			output_configuration constexpr &load(PROJECT_FILE const &project_file) noexcept;
 			bool constexpr store(PROJECT_FILE const &project_file) noexcept;
 		}
 	}

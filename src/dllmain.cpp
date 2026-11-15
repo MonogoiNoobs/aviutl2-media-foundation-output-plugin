@@ -22,7 +22,7 @@ auto constexpr utf8_to_utf16(std::string_view source, wchar_t *dest = nullptr, s
 	return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source.data(), static_cast<std::int32_t>(source.size()), dest, dest_size);
 }
 
-auto constexpr string_to_wstring(std::string_view str)
+auto constexpr widen_string(std::string_view str)
 {
 	auto const required_size{ utf8_to_utf16(str) };
 	std::wstring wstr(required_size, L'\0');
@@ -30,7 +30,7 @@ auto constexpr string_to_wstring(std::string_view str)
 	return wstr;
 }
 
-auto constexpr func_output(OUTPUT_INFO *oip) noexcept
+auto constexpr output(OUTPUT_INFO *oip) noexcept
 {
 	using namespace mfop::configure;
 
@@ -42,9 +42,9 @@ auto constexpr func_output(OUTPUT_INFO *oip) noexcept
 			std::format
 			(
 				L"FAILED TO OUTPUT: {} ({}, in {})",
-				string_to_wstring(std::system_category().message(succeeded.error().code)),
+				widen_string(std::system_category().message(succeeded.error().code)),
 				succeeded.error().code,
-				string_to_wstring(succeeded.error().where)
+				widen_string(succeeded.error().where)
 			).c_str()
 		);
 		return false;
@@ -55,19 +55,19 @@ auto constexpr func_output(OUTPUT_INFO *oip) noexcept
 	return true;
 }
 
-auto constexpr func_config(HWND window, HINSTANCE instance)
+auto constexpr open_configuration_dialog(HWND window, HINSTANCE instance)
 {
 	mfop::configure::open_dialog(window, instance);
 	return true;
 }
 
-auto constexpr func_load_project_config(PROJECT_FILE *project_file)
+auto constexpr load_project_configuration(PROJECT_FILE *project_file)
 {
-	config = mfop::configure::load(*project_file);
+	config = &mfop::configure::load(*project_file);
 	return true;
 }
 
-auto constexpr func_save_project_config(PROJECT_FILE *project_file)
+auto constexpr store_project_configuration(PROJECT_FILE *project_file)
 {
 	return mfop::configure::store(*project_file);
 }
@@ -94,11 +94,11 @@ extern "C"
 			"Advanced Systems Format (*.wmv; *.wma)\0"		"*.wmv;*.wma\0"
 			,
 			L"MFOutput.auo2 (github.com/MonogoiNoobs)",	// プラグインの情報
-			func_output,									// 出力時に呼ばれる関数へのポインタ
-			func_config,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
+			output,									// 出力時に呼ばれる関数へのポインタ
+			open_configuration_dialog,									// 出力設定のダイアログを要求された時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
 			nullptr,							// 出力設定のテキスト情報を取得する時に呼ばれる関数へのポインタ (nullptrなら呼ばれません)
-			func_load_project_config,
-			func_save_project_config,
+			load_project_configuration,
+			store_project_configuration,
 		};
 		return &output_plugin_table;
 	}

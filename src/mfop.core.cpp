@@ -227,7 +227,8 @@ namespace mfop
 		if (is_dx12_preferable)
 		{
 			aviutl_logger->info(aviutl_logger, L"DirectX 12 is available so will be used.");
-			UNEXPECT_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, IID_PPV_ARGS(&directx_device)));
+			auto d3d12_device{ &dynamic_cast<ID3D12Device3 &>(*directx_device) };
+			UNEXPECT_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, IID_PPV_ARGS(&d3d12_device)));
 		}
 		else
 		{
@@ -365,6 +366,7 @@ namespace mfop
 			ignore = encoder_attributes->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_Quality);
 			ignore = encoder_attributes->SetUINT32(CODECAPI_AVEncCommonQuality, quality);
 			ignore = encoder_attributes->SetUINT32(CODECAPI_AVEncNumWorkerThreads, 0);
+			ignore = encoder_attributes->SetUINT32(CODECAPI_AVLowLatencyMode, false);
 			break;
 		case FCC('WVC1'):
 			ignore = encoder_attributes->SetUINT32(MFPKEY_COMPRESSIONOPTIMIZATIONTYPE.fmtid, 1);
@@ -420,7 +422,7 @@ namespace mfop
 			RETURN_IF_UNEXPECTED(audio_index);
 		}
 
-		return stream_indices_t{ move_if_noexcept(*video_index), move_if_noexcept(*audio_index) };
+		return stream_indices_t{ move(*video_index), move(*audio_index) };
 	}
 
 	expected<sink_writer_with_indices_and_media_types_t, error> constexpr make_initialized_sink_writer(OUTPUT_INFO const &oip, configure::output_configuration const &configuration) noexcept
@@ -536,6 +538,15 @@ namespace mfop
 		RETURN_IF_UNEXPECTED(sink_writer_with_indices);
 
 		auto const [sink_writer, indices, input_media_types] { *sink_writer_with_indices };
+
+		aviutl_logger->info(aviutl_logger, format
+		(
+			L"MP4 video format: {}; Quality: {}; Audio bit rate: {}kbps; Accerelation: {}",
+			configuration.is_hevc_preferable ? L"HEVC" : L"H.264",
+			configuration.video_quality,
+			(1 << 5) * (3 + configuration.audio_bit_rate),
+			configuration.is_accelerated
+		).data());
 
 		oip.func_set_buffer_size(8, 8);
 

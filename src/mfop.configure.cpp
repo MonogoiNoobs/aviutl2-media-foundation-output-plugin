@@ -39,27 +39,7 @@ namespace mfop
 			auto constexpr is_hevc_preferable{ "MFOutput: Is HEVC preferable?" };
 		}
 
-		template<typename Key>
-		int32_t consteval get_default() noexcept
-		{
-			if (same_as<Key, video_quality>)		return 70;
-			if (same_as<Key, audio_bit_rate>)		return 3;
-			if (same_as<Key, is_accelerated>)		return BST_UNCHECKED;
-
-			if (same_as<Key, is_hevc_preferable>)	return FALSE;
-
-			unreachable();
-		}
-
-		output_configuration temp
-		{
-			.video_quality = 70,
-			.audio_bit_rate = 3,
-			.is_hevc_preferable = false,
-			.is_accelerated = false
-		};
-
-		enum struct audio_bit_rates : int32_t
+		enum struct audio_bit_rates : uint32_t
 		{
 			kbps_96,
 			kbps_128,
@@ -67,13 +47,33 @@ namespace mfop
 			kbps_192
 		};
 
-		output_configuration constexpr *load(PROJECT_FILE const &project_file) noexcept
+		template<typename Key>
+		int32_t consteval get_default() noexcept
 		{
-			if (auto t { project_file.get_param_string(keys::video_quality) }) temp.video_quality = stoi(t);
-			if (auto t{ project_file.get_param_string(keys::audio_bit_rate) }) temp.audio_bit_rate = stoi(t);
-			if (auto t{ project_file.get_param_string(keys::is_accelerated) }) temp.is_accelerated = t;
-			if (auto t{ project_file.get_param_string(keys::is_hevc_preferable) }) temp.is_hevc_preferable = t;
-			return &temp;
+			if (same_as<Key, video_quality>)		return 70;
+			if (same_as<Key, audio_bit_rate>)		return to_underlying(audio_bit_rates::kbps_192);
+			if (same_as<Key, is_accelerated>)		return BST_UNCHECKED;
+
+			if (same_as<Key, is_hevc_preferable>)	return FALSE;
+
+			unreachable();
+		}
+
+		static output_configuration temp
+		{
+			.video_quality = 70,
+			.audio_bit_rate = get_default<audio_bit_rate>(),
+			.is_hevc_preferable = false,
+			.is_accelerated = false
+		};
+
+		output_configuration constexpr &load(PROJECT_FILE const &project_file) noexcept
+		{
+			if (auto t{ project_file.get_param_string(keys::video_quality) }) temp.video_quality = stoul(t);
+			if (auto t{ project_file.get_param_string(keys::audio_bit_rate) }) temp.audio_bit_rate = stoul(t);
+			if (auto t{ project_file.get_param_string(keys::is_accelerated) }) temp.is_accelerated = cmp_equal(stoi(t), BST_CHECKED);
+			if (auto t{ project_file.get_param_string(keys::is_hevc_preferable) }) temp.is_hevc_preferable = cmp_equal(stoi(t), TRUE);
+			return temp;
 		}
 
 		bool constexpr store(PROJECT_FILE const &project_file) noexcept
@@ -81,11 +81,11 @@ namespace mfop
 			project_file.set_param_string(keys::video_quality, to_string(temp.video_quality).data());
 			project_file.set_param_string(keys::audio_bit_rate, to_string(temp.audio_bit_rate).data());
 			project_file.set_param_string(keys::is_accelerated, temp.is_accelerated ? "1" : "0");
-			project_file.set_param_string(keys::is_hevc_preferable, to_string(temp.is_hevc_preferable).data());
+			project_file.set_param_string(keys::is_hevc_preferable, temp.is_hevc_preferable ? "1" : "0");
 			return true;
 		}
 
-		auto constexpr on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
+		static auto constexpr on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
 		{
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"H.264");
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"HEVC");
@@ -105,7 +105,7 @@ namespace mfop
 			return false;
 		}
 
-		auto constexpr on_command(HWND dialog, int32_t id, HWND, uint32_t) noexcept
+		static auto constexpr on_command(HWND dialog, int32_t id, HWND, uint32_t) noexcept
 		{
 			switch (id)
 			{
