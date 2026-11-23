@@ -59,7 +59,7 @@ namespace mfop
 			unreachable();
 		}
 
-		static output_configuration temp
+		output_configuration temp
 		{
 			.video_quality = 70,
 			.audio_bit_rate = get_default<audio_bit_rate>(),
@@ -85,7 +85,7 @@ namespace mfop
 			return true;
 		}
 
-		static auto constexpr on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
+		auto constexpr on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
 		{
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"H.264");
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"HEVC");
@@ -105,7 +105,7 @@ namespace mfop
 			return false;
 		}
 
-		static auto constexpr on_command(HWND dialog, int32_t id, HWND, uint32_t) noexcept
+		auto constexpr on_command(HWND dialog, int32_t id, HWND, uint32_t) noexcept
 		{
 			switch (id)
 			{

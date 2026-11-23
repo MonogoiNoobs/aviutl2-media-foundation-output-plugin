@@ -47,7 +47,7 @@ import std;
 using namespace std;
 using namespace wil;
 
-static LOG_HANDLE *aviutl_logger;
+static LOG_HANDLE constinit *aviutl_logger{};
 
 namespace mfop
 {
@@ -189,9 +189,8 @@ namespace mfop
 		ignore = input_audio_media_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channel_count);
 		ignore = input_audio_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, true);
 
-		if (is_asf)
+		if (is_asf; auto const block_alignment{ get_pcm_block_alignment(channel_count) })
 		{
-			auto const block_alignment{ get_pcm_block_alignment(channel_count) };
 			ignore = input_audio_media_type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, block_alignment);
 			ignore = input_audio_media_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, block_alignment * sampling_rate);
 			ignore = input_audio_media_type->SetUINT32(MF_MT_AVG_BITRATE, sampling_rate * audio_bits_per_sample * channel_count);
@@ -204,7 +203,7 @@ namespace mfop
 	{
 		return IMFMediaTypes
 		{
-			cmp_equal(oip.flag bitand oip.FLAG_VIDEO, 0) or output_video_format == GUID_NULL ? nullptr : make_input_video_media_type({ oip.w, oip.h },{ oip.rate, oip.scale }, is_accelerated),
+			cmp_equal(oip.flag bitand oip.FLAG_VIDEO, 0) or output_video_format == GUID_NULL ? nullptr : make_input_video_media_type({ oip.w, oip.h }, { oip.rate, oip.scale }, is_accelerated),
 			cmp_equal(oip.flag bitand oip.FLAG_AUDIO, 0) ? nullptr : make_input_audio_media_type(oip.audio_ch, oip.audio_rate, cmp_equal(output_video_format.Data1, FCC('WVC1')))
 		};
 	}
@@ -224,10 +223,9 @@ namespace mfop
 		aviutl_logger->info(aviutl_logger, L"Preparing DirectX Video Acceleration...");
 		com_ptr_nothrow<IUnknown> directx_device{};
 
-		if (is_dx12_preferable)
+		if (is_dx12_preferable; auto d3d12_device{ &dynamic_cast<ID3D12Device3 &>(*directx_device) })
 		{
 			aviutl_logger->info(aviutl_logger, L"DirectX 12 is available so will be used.");
-			auto d3d12_device{ &dynamic_cast<ID3D12Device3 &>(*directx_device) };
 			UNEXPECT_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_1, IID_PPV_ARGS(&d3d12_device)));
 		}
 		else
@@ -281,12 +279,11 @@ namespace mfop
 			ignore = sink_writer_attributes->SetUINT32(MF_MPEG4SINK_MOOV_BEFORE_MDAT, true);
 		}
 
-		if (is_accelerated)
-			if (auto const d3d_manager{ make_dxgi_device_manager(is_dx12_available()) })
-			{
-				ignore = sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true);
-				ignore = sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, d3d_manager->get());
-			}
+		if (is_accelerated; auto const d3d_manager{ make_dxgi_device_manager(is_dx12_available()) })
+		{
+			ignore = sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, true);
+			ignore = sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, d3d_manager->get());
+		}
 
 		auto sink_writer{ com_ptr_nothrow<IMFSinkWriter>{} };
 		UNEXPECT_IF_FAILED(MFCreateSinkWriterFromURL(output_name.data(), nullptr, sink_writer_attributes.get(), out_ptr(sink_writer)));
@@ -320,6 +317,7 @@ namespace mfop
 			ignore = output_video_media_type->SetUINT32(MF_MT_MPEG2_LEVEL, eAVEncH265VLevel5_1);
 			[[fallthrough]];
 		default:
+			// This key is always ignored, but necessary.
 			ignore = output_video_media_type->SetUINT32(MF_MT_AVG_BITRATE, 12000000);
 			break;
 		}
@@ -332,8 +330,6 @@ namespace mfop
 
 	expected<DWORD, error> constexpr configure_audio_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, uint32_t const &output_bit_rate, GUID const &output_video_format) noexcept
 	{
-		__assume(cmp_less_equal(output_bit_rate, 3));
-
 		auto const output_audio_media_type{ make_media_type() };
 		ignore = output_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
 		ignore = output_audio_media_type->SetGUID(MF_MT_SUBTYPE, cmp_equal(output_video_format.Data1, FCC('WVC1')) ? MFAudioFormat_WMAudioV9 : MFAudioFormat_AAC);
@@ -350,8 +346,6 @@ namespace mfop
 
 	expected<DWORD, error> constexpr configure_video_input(IMFSinkWriter &sink_writer, DWORD const &index, uint32_t const &quality, GUID const &output_video_format, IMFMediaType &input_video_media_type) noexcept
 	{
-		__assume(cmp_less_equal(quality, 100));
-
 		com_ptr_nothrow<IMFAttributes> encoder_attributes{};
 		ignore = MFCreateAttributes(out_ptr(encoder_attributes), 5);
 
@@ -397,13 +391,13 @@ namespace mfop
 	expected<DWORD, error> constexpr configure_video_stream(IMFSinkWriter &sink_writer, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		return configure_video_output(sink_writer, input_media_type, output_video_format)
-			.and_then([&](DWORD &&i){ return configure_video_input(sink_writer, i, quality, output_video_format, input_media_type); });
+			.and_then([&](auto &&i){ return configure_video_input(sink_writer, i, quality, output_video_format, input_media_type); });
 	}
 
 	expected<DWORD, error> constexpr configure_audio_stream(IMFSinkWriter &sink_writer, int32_t const &output_bit_rate, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		return configure_audio_output(sink_writer, input_media_type, output_bit_rate, output_video_format)
-			.and_then([&](DWORD &&i){ return configure_audio_input(sink_writer, i, quality, output_video_format, input_media_type); });
+			.and_then([&](auto &&i){ return configure_audio_input(sink_writer, i, quality, output_video_format, input_media_type); });
 	}
 
 	expected<stream_indices_t, error> constexpr configure_streams(IMFSinkWriter &sink_writer, uint32_t const &quality, uint32_t const &output_bit_rate, IMFMediaTypes const &input_media_types, GUID const &output_video_format) noexcept
@@ -470,7 +464,9 @@ namespace mfop
 		(
 			scanline,
 			stride,
-			is_accelerated ? reinterpret_cast<uint8_t const *>(yuy2_to_nv12(frame_image, static_cast<size_t>(oip.w) * 2).data()) : reinterpret_cast<uint8_t const *>(frame_image.data()),
+			is_accelerated
+				? reinterpret_cast<uint8_t const *>(yuy2_to_nv12(frame_image, static_cast<size_t>(oip.w) * 2).data())
+				: reinterpret_cast<uint8_t const *>(frame_image.data()),
 			stride,
 			stride,
 			is_accelerated ? oip.h * 3 / 2 : oip.h
@@ -532,7 +528,7 @@ namespace mfop
 		auto const com_cleanup{ CoInitializeEx_failfast() };
 		auto const mf_cleanup{ MFStartup() };
 
-		aviutl_logger = &logger;
+		*aviutl_logger = logger;
 
 		auto sink_writer_with_indices{ make_initialized_sink_writer(oip, configuration) };
 		RETURN_IF_UNEXPECTED(sink_writer_with_indices);
