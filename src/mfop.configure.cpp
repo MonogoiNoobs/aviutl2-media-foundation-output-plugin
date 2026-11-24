@@ -10,6 +10,7 @@ module;
 #define NOMINMAX
 #include <Windows.h>
 #include <windowsx.h>
+#include <tchar.h>
 #include <wil/com.h>
 #include "resource.h"
 
@@ -87,13 +88,13 @@ namespace mfop
 
 		auto constexpr on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
 		{
-			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"H.264");
-			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), L"HEVC");
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), _T("H.264"));
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), _T("HEVC"));
 
-			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"96");
-			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"128");
-			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"160");
-			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), L"192");
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), _T("96"));
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), _T("128"));
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), _T("160"));
+			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO1), _T("192"));
 
 			ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), temp.is_hevc_preferable);
 
@@ -110,7 +111,7 @@ namespace mfop
 			switch (id)
 			{
 			case IDNO:
-				if (cmp_equal(MessageBoxW(dialog, L"全ての設定を初期化しますか？", L"設定値のリセット", MB_YESNO bitor MB_ICONWARNING), IDYES))
+				if (cmp_equal(MessageBox(dialog, _T("全ての設定を初期化しますか？"), _T("設定値のリセット"), MB_YESNO bitor MB_ICONWARNING), IDYES))
 				{
 					ignore = ComboBox_SetCurSel(GetDlgItem(dialog, IDC_COMBO2), get_default<is_hevc_preferable>());
 					ignore = SetDlgItemInt(dialog, IDC_EDIT1, get_default<video_quality>(), false);
@@ -145,7 +146,7 @@ namespace mfop
 
 		void constexpr open_dialog(HWND &window, HINSTANCE &instance) noexcept
 		{
-			DialogBoxW(instance, MAKEINTRESOURCEW(IDD_DIALOG1), window, config_dialog_proc);
+			DialogBox(instance, MAKEINTRESOURCE(IDD_DIALOG1), window, config_dialog_proc);
 		}
 	}
 }

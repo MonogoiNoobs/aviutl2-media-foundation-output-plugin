@@ -1,5 +1,4 @@
 #pragma once
-#include <minwindef.h>
 #include <cstdint>
 //----------------------------------------------------------------------------------
 //	汎用プラグイン ヘッダーファイル for AviUtl ExEdit2
@@ -833,6 +832,7 @@ struct EDIT_HANDLE {
 	static constexpr int EFFECT_ITEM_TYPE_NUMBER_GROUP	= 17;	// 数値(トラックバー)グループ
 	static constexpr int EFFECT_ITEM_TYPE_GROUP			= 18;	// 設定グループ(明示的なグループのみ) ※設定値無し
 	static constexpr int EFFECT_ITEM_TYPE_SEPARATOR		= 19;	// セパレーター ※設定値無し
+	static constexpr int EFFECT_ITEM_TYPE_COLOR_LIST	= 20;	// 色リスト
 
 	// 現在のシーンの映像のレンダリングをします
 	// この関数はレンダリングのタスクを追加するのみで完了します

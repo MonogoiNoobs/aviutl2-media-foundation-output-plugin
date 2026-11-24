@@ -365,3 +365,4 @@ FodyWeavers.xsd
 .vscode/
 
 [Ss]rc/aviutl2_sdk/
+vcpkg_installed/

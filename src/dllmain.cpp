@@ -14,8 +14,8 @@
 import std;
 import mfop;
 
-static LOG_HANDLE constinit *aviutl_logger{};
-static mfop::configure::output_configuration constinit *config{};
+static LOG_HANDLE *aviutl_logger;
+static mfop::configure::output_configuration *config;
 
 auto constexpr utf8_to_utf16(std::string_view source, wchar_t *dest = nullptr, std::int32_t const dest_size = 0)
 {
@@ -63,7 +63,7 @@ auto constexpr open_configuration_dialog(HWND window, HINSTANCE instance)
 
 auto constexpr load_project_configuration(PROJECT_FILE *project_file)
 {
-	*config = mfop::configure::load(*project_file);
+	config = &mfop::configure::load(*project_file);
 	return true;
 }
 

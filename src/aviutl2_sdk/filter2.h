@@ -37,6 +37,14 @@ typedef void* OBJECT_HANDLE;
 // エフェクトハンドル
 typedef void* EFFECT_HANDLE;
 
+// RGBA32bit構造体
+struct PIXEL_RGBA {
+	unsigned char r, g, b, a;
+	static constexpr PIXEL_RGBA FROM_CODE(int code) {
+		return PIXEL_RGBA{ static_cast<unsigned char>((code >> 16) & 0xff), static_cast<unsigned char>((code >> 8) & 0xff), static_cast<unsigned char>(code & 0xff), 255 };
+	}
+};
+
 //----------------------------------------------------------------------------------
 
 // 各項目の設定名はフィルタ毎にユニークにする必要があります。(設定値が保存される項目のみ)
@@ -98,6 +106,37 @@ struct FILTER_ITEM_COLOR {
 	LPCWSTR type = L"color";	// 設定の種別
 	LPCWSTR name;				// 設定名
 	VALUE value;				// 設定値 (フィルタ処理の呼び出し時に現在の値に更新されます)
+};
+
+// 色リスト項目構造体
+// 設定値の色の最大数をテンプレート引数で指定出来ます。
+// 設定名は"|"区切りで2個目以降の項目名を指定出来ます。※最大数より少ない場合は最後の項目名になります。
+// デフォルトの設定値は可変引数で指定出来ます。
+// 例：FILTER_ITEM_COLOR_LIST<8> colorlist = { L"基準色|中間色", 0xffffff };
+struct FILTER_ITEM_COLOR_LIST_FLAG {
+	static constexpr int USE_UNDEFINED		= 1; // 未指定を利用するか？
+	static constexpr int USE_POSITION		= 2; // 色の位置を利用するか？
+	static constexpr int FIXED_COLOR_NUM	= 4; // 色の数を固定するか？
+	static constexpr int USE_ALPHA_CHANNEL	= 8; // アルファ値を利用するか？
+};
+template <typename std::size_t N>
+struct FILTER_ITEM_COLOR_LIST {
+	struct VALUE { // 設定値の色
+		VALUE(PIXEL_RGBA color = PIXEL_RGBA{ 0, 0, 0, 255 }) : color(color), position(0), isUndefined(0) {}
+		PIXEL_RGBA color;
+		unsigned int position:31; // 0～10000
+		unsigned int isUndefined:1;
+		inline float getPosition() const { return position / 100.0f; } // 0.0～100.0の値で位置を取得
+	};
+	template <typename... Args>
+	FILTER_ITEM_COLOR_LIST(LPCWSTR name, int flag, Args... args)
+		: name(name), flag(flag), value{ static_cast<VALUE>(args)... }, num(sizeof...(args)), max_num(N) {}
+	LPCWSTR type = L"colorlist";	// 設定の種別
+	LPCWSTR name;					// 設定名
+	const int flag;					// 設定のフラグ (FILTER_ITEM_COLOR_LIST_FLAG)
+	const int max_num;				// 設定値の最大数
+	int num;						// 設定値の数 (フィルタ処理の呼び出し時に現在の値に更新されます)
+	VALUE value[N];					// 設定値 (フィルタ処理の呼び出し時に現在の値に更新されます)
 };
 
 // 選択リスト項目構造体
@@ -358,11 +397,6 @@ enum class OUTPUT_PIXEL_FORMAT : int {
 
 //----------------------------------------------------------------------------------
  
-// RGBA32bit構造体
-struct PIXEL_RGBA {
-	unsigned char r, g, b, a;
-};
-
 // シーン情報構造体
 struct SCENE_INFO {
 	int width, height;		// シーンの解像度
@@ -429,6 +463,62 @@ struct OBJECT_AUDIO_PARAM {
 struct EFFECT_ITEM_PARAM {
 	LPCWSTR name;	// 設定名 ※エイリアスファイルの設定のキーの名称
 	LPCSTR value;	// 設定値(UTF8) ※エイリアスファイルの設定値と同じフォーマット
+};
+
+//----------------------------------------------------------------------------------
+
+// アンカー処理セクション構造体
+// アンカーのドラッグ移動のコールバック関数内で利用出来ます
+// コールバック関数内では汎用データ項目を更新出来ます
+// ※トラックバー項目の変更は今後追加予定です
+struct ANCHOR_SECTION {
+	// ANCHOR_HANDLEの関数で指定したアンカーのインデックス
+	int index;
+
+	// アンカーのドラッグ移動先の座標
+	float x, y, z;
+
+	// アンカーの今回のドラッグ移動量
+	float dx, dy, dz;
+
+	// アンカーのドラッグ開始座標
+	float origin_x, origin_y, origin_z;
+
+	// ANCHOR_HANDLEの関数で指定したパラメータデータのポインタ
+	void* param;
+
+	// ユーザーデータのポインタ (FLAG_USERDATAが有効の時に設定されます)
+	// func_create()で返却したユーザーデータのポインタ
+	void* userdata;
+
+	// 編集セクション関数 ※アンカー処理中は参照系の関数が利用出来ます
+	EDIT_SECTION* edit;
+
+	// 自身のオブジェクトのハンドル
+	OBJECT_HANDLE object;
+
+	// 自身のエフェクトのハンドル
+	EFFECT_HANDLE effect;
+
+};
+
+// アンカー操作ハンドル構造体
+struct ANCHOR_HANDLE {
+	// ドラッグ移動可能なアンカーのポイントを設定する
+	// index			: 任意のアンカーのインデックス ※ANCHOR_SECTIONに設定されます
+	// x,y,z			: アンカーの座標 ※オブジェクトの座標系
+	// flag				: アンカーのフラグ ※現状は0を設定
+	// param			: 任意のパラメータデータのポインタ ※ANCHOR_SECTIONに設定されます
+	// func_proc_anchor	: アンカーのドラッグ移動処理のコールバック関数
+	void (*set_anchor_move_point)(int index, float x, float y, float z, int flag, void* param, void (*func_proc_anchor)(ANCHOR_SECTION* acnhor));
+
+	// アンカーのラインを設定する
+	// x0,y0,z0			: アンカーの開始座標
+	// x1,y1,z1			: アンカーの終了座標
+	// flag				: アンカーのフラグ ※現状は0を設定
+	// color			: アンカーラインの色
+	void (*set_anchor_line)(float x0, float y0, float z0, float x1, float y1, float z1, int flag, PIXEL_RGBA color);
+
 };
 
 //----------------------------------------------------------------------------------
@@ -864,6 +954,10 @@ struct FILTER_PROC_VIDEO {
 	// 現在のオブジェクトに影響しているカメラ制御オブジェクトを取得します
 	// 戻り値	: 取得したカメラ制御オブジェクトのハンドル (カメラ制御対象外の場合はnullptrを返却)
 	OBJECT_HANDLE (*get_camera_control_object)();
+
+	// アンカー操作ハンドル
+	// アンカーが設定出来ない場合はnullptrが設定されます
+	ANCHOR_HANDLE* anchor;
 
 };
 
