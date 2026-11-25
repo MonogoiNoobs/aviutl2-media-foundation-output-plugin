@@ -7,6 +7,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#include <wil/stl.h>
 #include <wil/result.h>
 #include "aviutl2_sdk/output2.h"
 #include "aviutl2_sdk/logger2.h"
@@ -17,12 +18,12 @@ import mfop;
 static LOG_HANDLE *aviutl_logger;
 static mfop::configure::output_configuration *config;
 
-auto constexpr utf8_to_utf16(std::string_view source, wchar_t *dest = nullptr, std::int32_t const dest_size = 0)
+auto constexpr utf8_to_utf16(wil::zstring_view source, wchar_t *dest = nullptr, std::int32_t const dest_size = 0)
 {
 	return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source.data(), static_cast<std::int32_t>(source.size()), dest, dest_size);
 }
 
-auto constexpr widen_string(std::string_view str)
+auto constexpr widen_string(wil::zstring_view str)
 {
 	auto const required_size{ utf8_to_utf16(str) };
 	std::wstring wstr(required_size, L'\0');

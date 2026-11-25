@@ -10,6 +10,7 @@ module;
 #define NOMINMAX
 #include <Windows.h>
 #include <wil/com.h>
+#include <wil/stl.h>
 #include <d3d11_3.h>
 #include <mfidl.h>
 #include <mfapi.h>
@@ -50,7 +51,7 @@ static LOG_HANDLE *aviutl_logger;
 
 namespace mfop
 {
-	auto constexpr audio_bits_per_sample{ 16u };
+	auto constexpr audio_bits_per_sample{ 16 };
 
 	auto constexpr null_stream_index{ -1 };
 
@@ -170,7 +171,7 @@ namespace mfop
 		return input_video_media_type;
 	}
 
-	auto make_input_audio_media_type(int32_t const &channel_count, int32_t const &sampling_rate, bool const &is_asf) noexcept
+	auto make_input_audio_media_type(integral auto const &channel_count, uint32_t const &sampling_rate, bool const &is_asf) noexcept
 	{
 		auto const input_audio_media_type{ make_media_type() };
 		ignore = input_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
@@ -213,7 +214,7 @@ namespace mfop
 	expected<com_ptr_nothrow<IMFDXGIDeviceManager>, error> constexpr make_dxgi_device_manager() noexcept
 	{
 		aviutl_logger->info(aviutl_logger, L"Preparing DirectX Video Acceleration...");
-		com_ptr_nothrow<IUnknown> directx_device{};
+		com_ptr_nothrow<ID3D11Device> directx_device{};
 
 		static D3D_FEATURE_LEVEL constexpr d3d_feature_levels[]
 		{
@@ -226,8 +227,6 @@ namespace mfop
 			D3D_FEATURE_LEVEL_9_1
 		};
 
-		auto d3d11_device{ &dynamic_cast<ID3D11Device &>(*directx_device) };
-
 		UNEXPECT_IF_FAILED(D3D11CreateDevice
 		(
 			nullptr,
@@ -237,7 +236,7 @@ namespace mfop
 			d3d_feature_levels,
 			size(d3d_feature_levels),
 			D3D11_SDK_VERSION,
-			&d3d11_device,
+			&directx_device,
 			nullptr,
 			nullptr
 		));
@@ -250,7 +249,7 @@ namespace mfop
 		return dxgi_device_manager;
 	}
 
-	expected<com_ptr_nothrow<IMFSinkWriter>, error> constexpr make_sink_writer(wstring_view output_name, bool const &is_accelerated, GUID const &output_video_format) noexcept
+	expected<com_ptr_nothrow<IMFSinkWriter>, error> constexpr make_sink_writer(zwstring_view output_name, bool const &is_accelerated, GUID const &output_video_format) noexcept
 	{
 		com_ptr_nothrow<IMFAttributes> sink_writer_attributes{};
 		ignore = MFCreateAttributes(out_ptr(sink_writer_attributes), 3);
@@ -314,7 +313,7 @@ namespace mfop
 		return video_index;
 	}
 
-	expected<DWORD, error> constexpr configure_audio_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, uint32_t const &output_bit_rate, GUID const &output_video_format) noexcept
+	expected<DWORD, error> constexpr configure_audio_output(IMFSinkWriter &sink_writer, IMFMediaType &input_media_type, integral auto const &output_bit_rate, GUID const &output_video_format) noexcept
 	{
 		auto const output_audio_media_type{ make_media_type() };
 		ignore = output_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
@@ -380,13 +379,13 @@ namespace mfop
 			.and_then([&](auto &&i) { return configure_video_input(sink_writer, i, quality, output_video_format, input_media_type); });
 	}
 
-	expected<DWORD, error> constexpr configure_audio_stream(IMFSinkWriter &sink_writer, int32_t const &output_bit_rate, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
+	expected<DWORD, error> constexpr configure_audio_stream(IMFSinkWriter &sink_writer, integral auto const &output_bit_rate, uint32_t const &quality, IMFMediaType &input_media_type, GUID const &output_video_format) noexcept
 	{
 		return configure_audio_output(sink_writer, input_media_type, output_bit_rate, output_video_format)
 			.and_then([&](auto &&i) { return configure_audio_input(sink_writer, i, quality, output_video_format, input_media_type); });
 	}
 
-	expected<stream_indices_t, error> constexpr configure_streams(IMFSinkWriter &sink_writer, uint32_t const &quality, uint32_t const &output_bit_rate, IMFMediaTypes const &input_media_types, GUID const &output_video_format) noexcept
+	expected<stream_indices_t, error> constexpr configure_streams(IMFSinkWriter &sink_writer, uint32_t const &quality, integral auto const &output_bit_rate, IMFMediaTypes const &input_media_types, GUID const &output_video_format) noexcept
 	{
 		expected<DWORD, error> video_index{ null_stream_index }, audio_index{ null_stream_index };
 
@@ -427,7 +426,7 @@ namespace mfop
 		return sink_writer_with_indices_and_media_types_t{ move(*sink_writer), move(*indices), move(media_types) };
 	}
 
-	auto constexpr write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type, bool const &is_accelerated, int64_t const &time_stamp) noexcept
+	auto constexpr write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type, bool const &is_accelerated, integral auto const &time_stamp) noexcept
 	{
 		if (oip.func_is_abort()) return E_ABORT;
 
@@ -502,11 +501,6 @@ namespace mfop
 
 	expected<HRESULT, error> constexpr output_file(OUTPUT_INFO const &oip, configure::output_configuration const &configuration, LOG_HANDLE &logger)
 	{
-		static auto constexpr is_hresult_successful{ [](HRESULT const &hr) noexcept
-		{
-			return cmp_greater_equal(hr, 0);
-		} };
-
 		if (cmp_equal(oip.flag, 0)) [[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: no input found" } };
 		if (auto extension{ filesystem::path{ oip.savefile }.extension() }; cmp_equal(oip.flag bitand oip.FLAG_AUDIO, 0) and (extension == ".wma" or extension == ".m4a"))
 			[[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: you've just tried to output audio WITHOUT audio" } };
@@ -541,22 +535,22 @@ namespace mfop
 			auto const video_time_stamp{ get_average_time_per_frame(*input_media_types.first) };
 
 			for (auto &&f : views::iota(0, oip.n))
-				if (not is_hresult_successful((aeternum = write_video_sample(oip, *sink_writer, f, indices.first, *input_media_types.first, configuration.is_accelerated, video_time_stamp))))
+				if (aeternum = write_video_sample(oip, *sink_writer, f, indices.first, *input_media_types.first, configuration.is_accelerated, video_time_stamp); not SUCCEEDED(aeternum))
 					break;
 		}
 
-		if (is_hresult_successful(aeternum) and input_media_types.second)
+		if (SUCCEEDED(aeternum) and input_media_types.second)
 		{
 			aviutl_logger->info(aviutl_logger, L"Audio stream found; sending samples to the writer...");
 
 			auto const audio_max_samples{ static_cast<int32_t>(get_pcm_block_alignment(oip.audio_ch) * oip.audio_rate) };
 
 			for (auto &&n : views::iota(0, oip.audio_n / oip.audio_rate + 1) | views::transform([&](integral auto &&i) { return i * oip.audio_rate; }))
-				if (not is_hresult_successful((aeternum = write_audio_sample(oip, *sink_writer, n, indices.second, *input_media_types.second, audio_max_samples))))
+				if (aeternum = write_audio_sample(oip, *sink_writer, n, indices.second, *input_media_types.second, audio_max_samples); not cmp_equal(aeternum, S_OK))
 					break;
 		}
 
-		aviutl_logger->info(aviutl_logger, is_hresult_successful(aeternum) ? L"Finalizing. It may take a while..." : L"Aborting...");
+		aviutl_logger->info(aviutl_logger, SUCCEEDED(aeternum) ? L"Finalizing. It may take a while..." : L"Aborting...");
 		UNEXPECT_IF_FAILED(sink_writer->Finalize());
 
 		UNEXPECT_IF_FAILED(aeternum);
