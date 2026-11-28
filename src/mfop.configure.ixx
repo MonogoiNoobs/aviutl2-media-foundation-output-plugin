@@ -9,6 +9,7 @@ module;
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#include <gsl/pointers>
 #include "aviutl2_sdk/plugin2.h"
 
 export module mfop:configure;
@@ -21,10 +22,10 @@ namespace mfop
 	{
 		export
 		{
-			void constexpr open_dialog(HWND &window, HINSTANCE &instance) noexcept;
+			void constexpr open_dialog(gsl::not_null<HWND> window, gsl::not_null<HINSTANCE> instance) noexcept;
 
-			enum struct video_quality : std::uint32_t {};
-			enum struct audio_bit_rate : std::uint32_t {};
+			enum struct video_quality : std::int32_t {};
+			enum struct audio_bit_rate : std::int32_t {};
 			enum struct is_hevc_preferable : bool {};
 			enum struct is_accelerated : bool {};
 

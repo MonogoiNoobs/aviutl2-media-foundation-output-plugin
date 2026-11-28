@@ -6,12 +6,15 @@
 
 module;
 
+#pragma warning(push)
+#pragma warning(disable: 26812)
+#include <CppCoreCheck\Warnings.h>
+#pragma warning(pop)
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
-#include <wil/com.h>
-#include <wil/stl.h>
-#include <d3d11_3.h>
+#include <d3d11.h>
 #include <mfidl.h>
 #include <mfapi.h>
 #include <mfreadwrite.h>
@@ -19,6 +22,15 @@ module;
 #include <wmcodecdsp.h>
 #include "aviutl2_sdk/output2.h"
 #include "aviutl2_sdk/logger2.h"
+#include <gsl/util>
+#include <gsl/span>
+
+#pragma warning(push)
+#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
+#pragma warning(disable: 26433 26434 26456 28182)
+#include <wil/com.h>
+#include <wil/stl.h>
+#pragma warning(pop)
 
 #include <ranges>
 
@@ -30,8 +42,8 @@ module;
 #pragma warning(default: 5266)
 
 #define UNEXPECT_IF_FAILED(hr) do { \
-	if (HRESULT const __mfop_hr{ hr }) \
-		if (std::cmp_less(__mfop_hr, 0)) [[unlikely]] return std::unexpected{ mfop::error{ __mfop_hr, #hr } }; \
+	HRESULT const __mfop_hr{ hr }; \
+	if (FAILED(__mfop_hr)) [[unlikely]] return std::unexpected{ mfop::error{ __mfop_hr, #hr } }; \
 } while (0)
 
 #define RETURN_IF_UNEXPECTED(__mfop_expected) do { \
@@ -62,10 +74,10 @@ namespace mfop
 	using IMFMediaTypes = pair<com_ptr_nothrow<IMFMediaType>, com_ptr_nothrow<IMFMediaType>>;
 	using sink_writer_with_indices_and_media_types_t = tuple<com_ptr_nothrow<IMFSinkWriter>, stream_indices_t const, IMFMediaTypes const>;
 
-	auto constexpr yuy2_to_nv12(ranges::constant_range auto &&yuy2, unsigned_integral auto const &yuy2_stride)
+	auto constexpr yuy2_to_nv12(gsl::span<std::byte const> yuy2, size_t const &yuy2_stride)
 	{
 		static auto constexpr take_y{ views::stride(2) };
-		static auto constexpr take_necessary_uv{ [](unsigned_integral auto const &yuy2_stride) noexcept
+		static auto constexpr take_necessary_uv{ [](size_t const &yuy2_stride) noexcept
 		{
 			return views::chunk(yuy2_stride)
 				| views::stride(2)
@@ -83,7 +95,7 @@ namespace mfop
 		return nv12;
 	}
 
-	unsigned_integral auto constexpr get_pcm_block_alignment(integral auto const &audio_ch, uint32_t const &bit = audio_bits_per_sample) noexcept
+	auto constexpr get_pcm_block_alignment(integral auto const &audio_ch, uint32_t const &bit = audio_bits_per_sample) noexcept
 	{
 		return (audio_ch * bit) / 8;
 	}
@@ -93,7 +105,7 @@ namespace mfop
 		return is_accelerated ? MFVideoFormat_NV12 : MFVideoFormat_YUY2;
 	}
 
-	unsigned_integral auto constexpr get_average_time_per_frame(IMFMediaType &media_type) noexcept
+	auto constexpr get_average_time_per_frame(IMFMediaType &media_type) noexcept
 	{
 		uint32_t rate{}, scale{};
 		ignore = MFGetAttributeRatio(&media_type, MF_MT_FRAME_RATE, &rate, &scale);
@@ -111,7 +123,7 @@ namespace mfop
 		return MFVideoFormat_H264;
 	}
 
-	auto make_media_type() noexcept
+	auto make_media_type()
 	{
 		com_ptr_nothrow<IMFMediaType> media_type{};
 		ignore = MFCreateMediaType(out_ptr(media_type));
@@ -125,7 +137,7 @@ namespace mfop
 		ignore = attributes.SetUINT32(MFPKEY_DESIRED_VBRQUALITY.fmtid, quality);
 	}
 
-	auto constexpr set_color_space_media_types(IMFMediaType &media_type, integral auto const &height) noexcept
+	auto constexpr set_color_space_media_types(IMFMediaType &media_type, size_t const &height) noexcept
 	{
 		ignore = media_type.SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
 
@@ -152,7 +164,7 @@ namespace mfop
 		}
 	}
 
-	auto make_input_video_media_type(resolution_t &&resolution, fps_t &&fps, bool const &is_accelerated) noexcept
+	auto make_input_video_media_type(resolution_t &&resolution, fps_t &&fps, bool const &is_accelerated)
 	{
 		auto const [width, height] { resolution };
 		auto const [rate, scale] { fps };
@@ -171,7 +183,7 @@ namespace mfop
 		return input_video_media_type;
 	}
 
-	auto make_input_audio_media_type(integral auto const &channel_count, uint32_t const &sampling_rate, bool const &is_asf) noexcept
+	auto make_input_audio_media_type(uint32_t const &channel_count, uint32_t const &sampling_rate, bool const &is_asf)
 	{
 		auto const input_audio_media_type{ make_media_type() };
 		ignore = input_audio_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
@@ -192,7 +204,7 @@ namespace mfop
 		return input_audio_media_type;
 	}
 
-	auto make_input_media_types(OUTPUT_INFO const &oip, GUID const &output_video_format = GUID_NULL, bool const &is_accelerated = false) noexcept
+	auto make_input_media_types(OUTPUT_INFO const &oip, GUID const &output_video_format = GUID_NULL, bool const &is_accelerated = false)
 	{
 		return IMFMediaTypes
 		{
@@ -201,7 +213,7 @@ namespace mfop
 		};
 	}
 
-	auto constexpr write_sample_to_sink_writer(IMFSinkWriter &sink_writer, DWORD const &index, IMFMediaBuffer &buffer, integral auto const &time, integral auto const &duration) noexcept
+	auto constexpr write_sample_to_sink_writer(IMFSinkWriter &sink_writer, DWORD const &index, IMFMediaBuffer &buffer, signed_integral auto const &time, signed_integral auto const &duration) noexcept
 	{
 		com_ptr_nothrow<IMFSample> sample{};
 		ignore = MFCreateSample(out_ptr(sample));
@@ -216,7 +228,7 @@ namespace mfop
 		aviutl_logger->info(aviutl_logger, L"Preparing DirectX Video Acceleration...");
 		com_ptr_nothrow<ID3D11Device> directx_device{};
 
-		static D3D_FEATURE_LEVEL constexpr d3d_feature_levels[]
+		static auto constexpr d3d_feature_levels{ to_array(
 		{
 			D3D_FEATURE_LEVEL_11_1,
 			D3D_FEATURE_LEVEL_11_0,
@@ -225,7 +237,7 @@ namespace mfop
 			D3D_FEATURE_LEVEL_9_3,
 			D3D_FEATURE_LEVEL_9_2,
 			D3D_FEATURE_LEVEL_9_1
-		};
+		}) };
 
 		UNEXPECT_IF_FAILED(D3D11CreateDevice
 		(
@@ -233,8 +245,8 @@ namespace mfop
 			D3D_DRIVER_TYPE_HARDWARE,
 			nullptr,
 			D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
-			d3d_feature_levels,
-			size(d3d_feature_levels),
+			d3d_feature_levels.data(),
+			static_cast<uint32_t>(d3d_feature_levels.size()),
 			D3D11_SDK_VERSION,
 			&directx_device,
 			nullptr,
@@ -270,7 +282,7 @@ namespace mfop
 			ignore = sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, d3d_manager->get());
 		}
 
-		auto sink_writer{ com_ptr_nothrow<IMFSinkWriter>{} };
+		com_ptr_nothrow<IMFSinkWriter> sink_writer{};
 		UNEXPECT_IF_FAILED(MFCreateSinkWriterFromURL(output_name.data(), nullptr, sink_writer_attributes.get(), out_ptr(sink_writer)));
 
 		return sink_writer;
@@ -413,12 +425,12 @@ namespace mfop
 		if (not (cmp_equal(oip.flag bitand oip.FLAG_VIDEO, 0) or (extension == ".wma" or extension == ".m4a")))
 			output_video_format = get_suitable_output_video_format_guid(extension, configuration.is_hevc_preferable);
 
-		auto const media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
+		auto media_types{ make_input_media_types(oip, output_video_format, configuration.is_accelerated) };
 
-		auto const sink_writer{ make_sink_writer(oip.savefile, configuration.is_accelerated, output_video_format) };
+		auto sink_writer{ make_sink_writer(oip.savefile, configuration.is_accelerated, output_video_format) };
 		RETURN_IF_UNEXPECTED(sink_writer);
 
-		auto const indices{ configure_streams(**sink_writer, configuration.video_quality, configuration.audio_bit_rate, media_types, output_video_format) };
+		auto indices{ configure_streams(**sink_writer, configuration.video_quality, configuration.audio_bit_rate, media_types, output_video_format) };
 		RETURN_IF_UNEXPECTED(indices);
 
 		UNEXPECT_IF_FAILED((*sink_writer)->BeginWriting());
@@ -426,7 +438,7 @@ namespace mfop
 		return sink_writer_with_indices_and_media_types_t{ move(*sink_writer), move(*indices), move(media_types) };
 	}
 
-	auto constexpr write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type, bool const &is_accelerated, integral auto const &time_stamp) noexcept
+	auto constexpr write_video_sample(OUTPUT_INFO const &oip, IMFSinkWriter &sink_writer, int32_t const &f, DWORD const &index, IMFMediaType &input_media_type, bool const &is_accelerated, signed_integral auto const &time_stamp) noexcept
 	{
 		if (oip.func_is_abort()) return E_ABORT;
 
@@ -438,24 +450,20 @@ namespace mfop
 		com_ptr_nothrow<IMF2DBuffer2> video_2d_buffer{};
 		RETURN_IF_FAILED(video_buffer.query_to(&video_2d_buffer));
 
-		auto const frame_image{ as_bytes(span{ static_cast<uint8_t *>(oip.func_get_video(f, FCC('YUY2'))), static_cast<size_t>(oip.w * oip.h * 2) }) };
+		auto const frame_image{ gsl::span{ static_cast<std::byte const *>(oip.func_get_video(f, FCC('YUY2'))), static_cast<size_t>(oip.w) * oip.h * 2 } };
 
 		// Neither buffer_begin nor buffer_size used, but do NOT give Lock2DSize's 4-5th args nullptr or you'll be cooked.
 		uint8_t *scanline{}, *buffer_begin{};
 		long stride{};
 		DWORD buffer_size{};
 		ignore = video_2d_buffer->Lock2DSize(MF2DBuffer_LockFlags_Write, &scanline, &stride, &buffer_begin, &buffer_size);
-		ignore = MFCopyImage
-		(
-			scanline,
-			stride,
-			is_accelerated
-			? reinterpret_cast<uint8_t const *>(yuy2_to_nv12(frame_image, static_cast<size_t>(oip.w) * 2).data())
-			: reinterpret_cast<uint8_t const *>(frame_image.data()),
-			stride,
-			stride,
-			is_accelerated ? oip.h * 3 / 2 : oip.h
-		);
+		auto const dest{ as_writable_bytes(gsl::span{ buffer_begin, buffer_size }) };
+		if (is_accelerated)
+		{
+			auto const nv12{ yuy2_to_nv12(frame_image, static_cast<size_t>(oip.w) * 2) };
+			ignore = ranges::copy(nv12, dest.begin());
+		}
+		else ignore = ranges::copy(frame_image, dest.begin());
 		ignore = video_2d_buffer->Unlock2D();
 
 		// MSDN's a bald-faced liar and seriously values redundancy.
@@ -485,15 +493,17 @@ namespace mfop
 		uint8_t *media_data{};
 		DWORD media_data_max_length{};
 		ignore = audio_buffer->Lock(&media_data, &media_data_max_length, nullptr); // Despite Lock2DSize, the 3rd arg set null, but MSDN says it's OK.
-		ignore = copy_n(audio_data, static_cast<size_t>(actual_samples), media_data);
+		auto const source{ as_bytes(gsl::span{ audio_data, gsl::narrow_cast<size_t>(actual_samples) }) };
+		auto const dest{ as_writable_bytes(gsl::span{ media_data, media_data_max_length }) };
+		ignore = ranges::copy(source, dest.begin());
 		ignore = audio_buffer->Unlock();
 
-		ignore = audio_buffer->SetCurrentLength(static_cast<DWORD>(actual_samples));
+		ignore = audio_buffer->SetCurrentLength(gsl::narrow_cast<DWORD>(actual_samples));
 
 		return write_sample_to_sink_writer(sink_writer, index, *audio_buffer, sample_time, sample_duration);
 	}
 
-	[[nodiscard]] inline auto MFStartup(DWORD &&flags = MFSTARTUP_FULL)
+	[[nodiscard]] inline auto MFStartup(DWORD const &flags = MFSTARTUP_FULL) noexcept
 	{
 		FAIL_FAST_IF_FAILED(::MFStartup(MF_VERSION, flags));
 		return unique_call<decltype(&::MFShutdown), ::MFShutdown>{};
@@ -501,8 +511,10 @@ namespace mfop
 
 	expected<HRESULT, error> constexpr output_file(OUTPUT_INFO const &oip, configure::output_configuration const &configuration, LOG_HANDLE &logger)
 	{
-		if (cmp_equal(oip.flag, 0)) [[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: no input found" } };
-		if (auto extension{ filesystem::path{ oip.savefile }.extension() }; cmp_equal(oip.flag bitand oip.FLAG_AUDIO, 0) and (extension == ".wma" or extension == ".m4a"))
+		if (cmp_equal(oip.flag, 0))
+			[[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: no input found" } };
+		if (auto extension{ filesystem::path{ oip.savefile }.extension() };
+			cmp_equal(oip.flag bitand oip.FLAG_AUDIO, 0) and (extension == ".wma" or extension == ".m4a"))
 			[[unlikely]] return unexpected{ error{ E_INVALIDARG, "this session: you've just tried to output audio WITHOUT audio" } };
 
 		auto const com_cleanup{ CoInitializeEx_failfast() };
@@ -532,7 +544,7 @@ namespace mfop
 		{
 			aviutl_logger->info(aviutl_logger, L"Video stream found; sending samples to the writer...");
 
-			auto const video_time_stamp{ get_average_time_per_frame(*input_media_types.first) };
+			auto const video_time_stamp{ gsl::narrow_cast<int64_t>(get_average_time_per_frame(*input_media_types.first)) };
 
 			for (auto &&f : views::iota(0, oip.n))
 				if (aeternum = write_video_sample(oip, *sink_writer, f, indices.first, *input_media_types.first, configuration.is_accelerated, video_time_stamp); not SUCCEEDED(aeternum))
@@ -543,9 +555,9 @@ namespace mfop
 		{
 			aviutl_logger->info(aviutl_logger, L"Audio stream found; sending samples to the writer...");
 
-			auto const audio_max_samples{ static_cast<int32_t>(get_pcm_block_alignment(oip.audio_ch) * oip.audio_rate) };
+			auto const audio_max_samples{ get_pcm_block_alignment(oip.audio_ch) * oip.audio_rate };
 
-			for (auto &&n : views::iota(0, oip.audio_n / oip.audio_rate + 1) | views::transform([&](integral auto &&i) { return i * oip.audio_rate; }))
+			for (auto n{ 0 }; cmp_less(n, oip.audio_n); n += oip.audio_rate)
 				if (aeternum = write_audio_sample(oip, *sink_writer, n, indices.second, *input_media_types.second, audio_max_samples); not cmp_equal(aeternum, S_OK))
 					break;
 		}

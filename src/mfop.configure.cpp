@@ -6,18 +6,30 @@
 
 module;
 
+#pragma warning(push)
+#pragma warning(disable: 26812)
+#include <CppCoreCheck\Warnings.h>
+#pragma warning(pop)
+
+#pragma warning(push)
+#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
+#pragma warning(disable: 26433 26434 26456 28182)
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
 #include <windowsx.h>
 #include <tchar.h>
-#include <wil/com.h>
 #include "resource.h"
 
 #include "aviutl2_sdk/plugin2.h"
 
+#include <gsl/pointers>
+
 #define HANDLE_DIALOG_MSG(hwnd, message, fn) \
 	case (message): return SetDlgMsgResult(dialog, message, HANDLE_##message((hwnd), (wParam), (lParam), (fn)))
+
+#pragma warning(pop)
 
 module mfop;
 
@@ -26,7 +38,6 @@ import :configure;
 import std;
 
 using namespace std;
-using namespace wil;
 
 namespace mfop
 {
@@ -40,7 +51,7 @@ namespace mfop
 			auto constexpr is_hevc_preferable{ "MFOutput: Is HEVC preferable?" };
 		}
 
-		enum struct audio_bit_rates : uint32_t
+		enum struct audio_bit_rates
 		{
 			kbps_96,
 			kbps_128,
@@ -70,8 +81,8 @@ namespace mfop
 
 		output_configuration constexpr &load(PROJECT_FILE const &project_file) noexcept
 		{
-			if (auto t{ project_file.get_param_string(keys::video_quality) }) temp.video_quality = stoul(t);
-			if (auto t{ project_file.get_param_string(keys::audio_bit_rate) }) temp.audio_bit_rate = stoul(t);
+			if (auto t{ project_file.get_param_string(keys::video_quality) }) temp.video_quality = stoi(t);
+			if (auto t{ project_file.get_param_string(keys::audio_bit_rate) }) temp.audio_bit_rate = stoi(t);
 			if (auto t{ project_file.get_param_string(keys::is_accelerated) }) temp.is_accelerated = cmp_equal(stoi(t), BST_CHECKED);
 			if (auto t{ project_file.get_param_string(keys::is_hevc_preferable) }) temp.is_hevc_preferable = cmp_equal(stoi(t), TRUE);
 			return temp;
@@ -86,7 +97,7 @@ namespace mfop
 			return true;
 		}
 
-		auto constexpr on_init_dialog(HWND dialog, HWND, intptr_t) noexcept
+		auto constexpr on_init_dialog(gsl::not_null<HWND> dialog, HWND, intptr_t) noexcept
 		{
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), _T("H.264"));
 			ignore = ComboBox_AddString(GetDlgItem(dialog, IDC_COMBO2), _T("HEVC"));
@@ -106,7 +117,7 @@ namespace mfop
 			return false;
 		}
 
-		auto constexpr on_command(HWND dialog, int32_t id, HWND, uint32_t) noexcept
+		auto constexpr on_command(gsl::not_null<HWND> dialog, int32_t id, HWND, uint32_t) noexcept
 		{
 			switch (id)
 			{
@@ -127,6 +138,7 @@ namespace mfop
 				temp.is_accelerated = Button_GetCheck(GetDlgItem(dialog, IDC_CHECK1));
 				[[fallthrough]];
 			case IDCANCEL:
+			default:
 				ignore = EndDialog(dialog, id);
 				break;
 			}
@@ -144,7 +156,7 @@ namespace mfop
 			}
 		}
 
-		void constexpr open_dialog(HWND &window, HINSTANCE &instance) noexcept
+		void constexpr open_dialog(gsl::not_null<HWND> window, gsl::not_null<HINSTANCE> instance) noexcept
 		{
 			DialogBox(instance, MAKEINTRESOURCE(IDD_DIALOG1), window, config_dialog_proc);
 		}

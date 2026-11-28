@@ -4,13 +4,24 @@
  * \author		Shion Yorigami <62567343+MonogoiNoobs@users.noreply.github.com>
  */
 
+#pragma warning(push)
+#pragma warning(disable: 26812)
+#include <CppCoreCheck\Warnings.h>
+#pragma warning(pop)
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
-#include <wil/stl.h>
-#include <wil/result.h>
 #include "aviutl2_sdk/output2.h"
 #include "aviutl2_sdk/logger2.h"
+#include <gsl/util>
+#include <gsl/pointers>
+
+#pragma warning(push)
+#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
+#pragma warning(disable: 26433 26434 26456 28182)
+#include <wil/stl.h>
+#pragma warning(pop)
 
 import std;
 import mfop;
@@ -20,7 +31,7 @@ static mfop::configure::output_configuration *config;
 
 auto constexpr utf8_to_utf16(wil::zstring_view source, wchar_t *dest = nullptr, std::int32_t const dest_size = 0)
 {
-	return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source.data(), static_cast<std::int32_t>(source.size()), dest, dest_size);
+	return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source.data(), gsl::narrow_cast<std::int32_t>(source.size()), dest, dest_size);
 }
 
 auto constexpr widen_string(wil::zstring_view str)
@@ -31,11 +42,13 @@ auto constexpr widen_string(wil::zstring_view str)
 	return wstr;
 }
 
+[[gsl::suppress("f.23", justification: "Required by OUTPUT_INFO")]]
+[[gsl::suppress("con.3", justification: "Required by OUTPUT_INFO")]]
 auto constexpr output(OUTPUT_INFO *oip) noexcept
 {
 	using namespace mfop::configure;
 
-	if (auto const succeeded{ mfop::output_file(*oip, *config, *aviutl_logger) }; not succeeded)
+	if (auto const succeeded{ mfop::output_file(*oip, *config, *aviutl_logger)}; not succeeded)
 	{
 		aviutl_logger->error
 		(
@@ -62,18 +75,22 @@ auto constexpr open_configuration_dialog(HWND window, HINSTANCE instance)
 	return true;
 }
 
+[[gsl::suppress("f.23", justification: "Required by OUTPUT_INFO")]]
+[[gsl::suppress("con.3", justification: "Required by OUTPUT_INFO")]]
 auto constexpr load_project_configuration(PROJECT_FILE *project_file)
 {
 	config = &mfop::configure::load(*project_file);
 	return true;
 }
 
+[[gsl::suppress("f.23", justification: "Required by OUTPUT_INFO")]]
+[[gsl::suppress("con.3", justification: "Required by OUTPUT_INFO")]]
 auto constexpr store_project_configuration(PROJECT_FILE *project_file)
 {
-	return mfop::configure::store(*project_file);
+	return mfop::configure::store(*gsl::make_strict_not_null(project_file));
 }
 
-auto WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
+auto WINAPI DllMain([[maybe_unused]] HINSTANCE instance, DWORD reason, void *reserved)
 {
 	wil::DLLMain(instance, reason, reserved);
 	return true;
